@@ -13,7 +13,7 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
 
 1. Clone the repository:
    ```
-   git clone https://github.com/your-username/study-buddy.git
+   git clone https://github.com/rebornify/study-buddy.git
    ```
 
 2. Navigate to the project directory:
