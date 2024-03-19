@@ -1,6 +1,6 @@
 # Study Buddy
 
-Study Buddy is an AI-powered chat application that helps students learn and study effectively by engaging with their study materials. It allows users to upload their study materials and ask questions, and the AI assistant provides helpful explanations and summaries based on the uploaded content.
+Study Buddy is an AI-powered chat application that helps students learn and study effectively by engaging with their study materials. It allows users to upload their study materials and ask questions, and the AI assistant, powered by OpenAI, provides helpful explanations and summaries based on the uploaded content.
 
 ## Features
 
