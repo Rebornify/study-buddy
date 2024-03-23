@@ -143,9 +143,9 @@ if st.session_state.start_chat:
             ]
 
             for message in assistant_messages_for_run:
-                st.session_state.messages.append({"role": "assistant", "content": message})
+                st.session_state.messages.append({"role": "assistant", "content": message.content[0].text.value})
                 with st.chat_message("assistant"):
-                    st.markdown(message, unsafe_allow_html=True)
+                    st.markdown(message.content[0].text.value, unsafe_allow_html=True)
 
     else:
         st.info("Type your question or message in the input box below to start chatting.")
