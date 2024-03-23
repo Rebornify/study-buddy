@@ -93,24 +93,6 @@ Remember, your goal is to empower the student to grasp the material effectively 
     else:
         st.sidebar.warning("Please upload at least one file to start chatting.")
 
-def process_message_with_citations(message):
-    """Extract content and annotations from the message and format citations as footnotes."""
-    message_content = message.content[0].text
-    annotations = message_content.annotations if hasattr(message_content, "annotations") else []
-    citations = []
-
-    for index, annotation in enumerate(annotations):
-        message_content.value = message_content.value.replace(annotation.text, f" [{index + 1}]")
-        if file_citation := getattr(annotation, "file_citation", None):
-            cited_file = {"filename": "Whitepaper Summary v1.0.pdf"}
-            citations.append(f'[{index + 1}] {file_citation.quote} from {cited_file["filename"]}')
-        elif file_path := getattr(annotation, "file_path", None):
-            cited_file = {"filename": "Whitepaper Summary v1.0.pdf"}
-            citations.append(f'[{index + 1}] Click [here](#) to download {cited_file["filename"]}')
-
-    full_response = message_content.value + "\n\n" + "\n".join(citations)
-    return full_response
-
 # Main interface
 st.title("Study Buddy")
 st.write("Learn fast by chatting with your study materials")
@@ -161,10 +143,9 @@ if st.session_state.start_chat:
             ]
 
             for message in assistant_messages_for_run:
-                full_response = process_message_with_citations(message)
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                st.session_state.messages.append({"role": "assistant", "content": message})
                 with st.chat_message("assistant"):
-                    st.markdown(full_response, unsafe_allow_html=True)
+                    st.markdown(message, unsafe_allow_html=True)
 
     else:
         st.info("Type your question or message in the input box below to start chatting.")
