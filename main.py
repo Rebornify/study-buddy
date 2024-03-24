@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 import openai
 import time
 import streamlit as st
+import os
 
 load_dotenv()
 
@@ -25,19 +26,21 @@ st.set_page_config(page_title="Study Buddy - Chat and Learn", page_icon=":books:
 
 def upload_to_openai(filepath):
     with open(filepath, "rb") as file:
-        response = client.files.create(file=file.read(), purpose="assistants")
-    return response.id
+        uploaded_file = client.files.create(file=file.read(), purpose="assistants")
+    return uploaded_file.id
 
 # File upload sidebar
-files_uploaded = st.sidebar.file_uploader("Upload your study materials (PDF, TXT, etc.)", type=["pdf", "txt"], key="file_upload", accept_multiple_files=True)
+uploaded_files = st.sidebar.file_uploader("Upload your study materials (PDF, TXT, etc.)", type=["pdf", "txt"], key="file_upload", accept_multiple_files=True)
 
 if st.sidebar.button("Upload File(s)"):
-    if files_uploaded:
-        for file in files_uploaded:
-            if file.name not in [f["name"] for f in st.session_state.file_id_list]:
-                with open(f"{file.name}", "wb") as f:
-                    f.write(file.getbuffer())
-                file_id = upload_to_openai(f"{file.name}")
+    if uploaded_files:
+        uploaded_file_names = {f["name"] for f in st.session_state.file_id_list}
+        for file in uploaded_files:
+            if file.name not in uploaded_file_names:
+                file_path = os.path.join(file.name)
+                with open(file_path, "wb") as file_obj:
+                    file_obj.write(file.getbuffer())
+                file_id = upload_to_openai(file_path)
                 st.session_state.file_id_list.append({"name": file.name, "id": file_id})
                 st.sidebar.success(f"File '{file.name}' uploaded successfully.")
     else:
@@ -59,9 +62,9 @@ if st.sidebar.button("Start Chatting"):
             # Create the assistant
             assistant = client.beta.assistants.create(
                 name="Study Buddy",
-                instructions = """You are an AI study assistant called "Study Buddy". Your role is to help a computer science student learn and understand various concepts in their field of study.
+                instructions="""You are an AI study assistant called "Study Buddy". Your role is to help students learn and understand various concepts in their field of study.
 
-When the student asks a question, provide clear and concise explanations of the relevant topics. Break down complex concepts into easily understandable parts. Share helpful resources, such as academic papers, tutorials, or online courses, that can further enhance their understanding.
+When a student asks a question, provide clear and concise explanations of the relevant topics. Break down complex concepts into easily understandable parts. Share helpful resources, such as academic papers, tutorials, or online courses, that can further enhance their understanding.
 
 Engage in meaningful discussions with the student to deepen their understanding of the subject matter. Encourage them to think critically and ask questions. Help them develop problem-solving skills and provide guidance on practical applications of the concepts they are learning.
 
@@ -69,17 +72,14 @@ Be friendly, supportive, and patient in your interactions. Motivate the student 
 
 Tailor your responses to the student's level of understanding and learning style. Adapt your explanations and examples to make the content more relatable and accessible.
 
-Remember, your goal is to empower the student to grasp the material effectively and develop a strong foundation in computer science.""",
+Remember, your goal is to empower the student to grasp the material effectively and develop a strong foundation in their chosen field of study.""",
                 tools=[{"type": "retrieval"}],
                 model=model,
+                file_ids=st.session_state.file_id_list
             )
 
             # Store the assistant_id in the session state
             st.session_state.assistant_id = assistant.id
-
-            # Associate uploaded files with the assistant
-            for file in st.session_state.file_id_list:
-                client.beta.assistants.files.create(assistant_id=st.session_state.assistant_id, file_id=file["id"])
 
         # Check if thread_id exists in the session state
         if not st.session_state.thread_id:
