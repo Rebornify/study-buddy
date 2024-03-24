@@ -5,9 +5,10 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
 ## Features
 
 - Upload study materials (PDF, TXT) for the AI assistant to analyze
-- Engage in a chat-based Q&A with the AI assistant
-- Receive explanations and summaries from the uploaded study materials
+- Interact with the AI assistant through a conversational interface to ask questions and receive answers
+- Receive explanations and summaries from the uploaded study materials to enhance your understanding
 - Intuitive and user-friendly interface powered by Streamlit
+- Conversation history and retrieval using MongoDB for seamless continuity of learning
 
 ## Installation
 
@@ -48,6 +49,10 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
      OPENAI_API_KEY=your-api-key
      ```
 
+7. Set up MongoDB:
+   - Install MongoDB on your system or use a hosted MongoDB service
+   - Update the MongoDB connection details in `main.py` if necessary
+
 ## Usage
 
 1. Make sure you have activated the virtual environment (if you created one)
@@ -66,6 +71,8 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
 6. Type your questions or messages in the input box and press Enter to send
 
 7. The AI assistant will provide responses based on the uploaded study materials
+
+8. Previous conversations will be displayed, allowing you to resume a conversation by clicking on the corresponding button
 
 ## Contributing
 
