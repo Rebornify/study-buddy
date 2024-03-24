@@ -75,7 +75,7 @@ Tailor your responses to the student's level of understanding and learning style
 Remember, your goal is to empower the student to grasp the material effectively and develop a strong foundation in their chosen field of study.""",
                 tools=[{"type": "retrieval"}],
                 model=model,
-                file_ids=st.session_state.file_id_list
+                file_ids=[file["id"] for file in st.session_state.file_id_list]
             )
 
             # Store the assistant_id in the session state
