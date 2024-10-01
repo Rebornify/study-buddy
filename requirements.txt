@@ -2,3 +2,4 @@ openai
 streamlit
 python-dotenv
 mongoengine
+streamlit_authenticator

@@ -1,16 +1,15 @@
 # Study Buddy
 
-Study Buddy is an AI-powered chat application that helps students learn and study effectively by engaging with their study materials. It allows users to upload their study materials and ask questions, and the AI assistant, powered by OpenAI's Assistants API v2, provides helpful explanations and summaries based on the uploaded content.
+Study Buddy is an AI-powered chat application that helps students learn and study effectively using their own study materials. By leveraging OpenAI's Assistants API v2, it provides an interactive learning experience tailored to your uploaded content.
 
 ## Features
 
-- Upload study materials (PDF, TXT) to a vector store for efficient retrieval and analysis
-- Create study threads for organizing your learning sessions
-- Interact with an advanced AI assistant through a conversational interface
-- Receive explanations and summaries from the uploaded study materials to enhance your understanding
-- Intuitive and user-friendly interface powered by Streamlit
-- Conversation history and retrieval using MongoDB for seamless continuity of learning
-- Enhanced file management capabilities with efficient vector store integration
+- Secure user authentication and registration system
+- Upload your study materials (PDF, TXT) for AI-assisted learning
+- Organize your learning with personalized study sessions
+- Chat with an AI tutor that references your materials
+- Review and continue previous study conversations
+- User-friendly interface built with Streamlit
 
 ## Installation
 
@@ -18,14 +17,17 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
    ```
    git clone https://github.com/rebornify/study-buddy.git
    ```
+
 2. Navigate to the project directory:
    ```
    cd study-buddy
    ```
-3. Create a virtual environment (optional but recommended):
+
+3. Create a virtual environment:
    ```
    python -m venv .venv
    ```
+
 4. Activate the virtual environment:
    - For Windows:
      ```
@@ -35,35 +37,62 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
      ```
      source .venv/bin/activate
      ```
+
 5. Install the required dependencies:
    ```
    pip install -r requirements.txt
    ```
-6. Set up your OpenAI API credentials:
-   - Create a `.env` file in the project root directory
-   - Add your OpenAI API key in the following format:
+
+6. Set up your environment variables:
+   - Create a `.env` file in the project root directory with the following content:
      ```
-     OPENAI_API_KEY=your-api-key
+     OPENAI_API_KEY=your-openai-api-key
+     MONGO_CONNECTION_STRING=your-mongodb-connection-string
      ```
-7. Set up MongoDB:
-   - Install MongoDB on your system or use a hosted MongoDB service
-   - Update the MongoDB connection details in `main.py` if necessary
+
+7. Configure the `config.yaml` file:
+   - Create a `config.yaml` file in the project root with the following structure:
+     ```yaml
+     cookie:
+       expiry_days: 30
+       key: your_secret_key  # Must be a string
+       name: study_buddy_cookie
+     credentials:
+       usernames:
+     ```
+   - You can modify the cookie settings if desired, but the default values should work fine for most users.
+   - The `credentials:` section will be automatically populated as users register.
 
 ## Usage
 
-1. Make sure you have activated the virtual environment (if you created one)
+1. Ensure your virtual environment is activated
+
 2. Run the application:
    ```
    streamlit run main.py
    ```
-3. Access the application in your web browser at `http://localhost:8501`
-4. Follow the new workflow in the sidebar:
-   1. **Upload Files**: Use the file uploader to add your study materials (PDF or TXT files)
-   2. **Process Files**: Click the "Process Files" button to upload and process your files
-   3. **Create Thread**: After processing files, enter a title for your study session and click "Create Thread and Start Chat"
-5. Once the chat is initiated, type your questions or messages in the input box and press Enter to send
-6. The AI assistant will provide responses based on the uploaded study materials
-7. Previous threads will be displayed on the main page, allowing you to resume a conversation by clicking on the corresponding "Resume" button
+
+3. Open your web browser and go to `http://localhost:8501`
+
+4. Register a new account or log in if you already have one
+
+5. Use the sidebar to navigate:
+   - **Home**: Get an overview of Study Buddy
+   - **New Chat**: Start a new study session
+   - **Chat History**: Access your previous sessions
+
+6. To begin studying:
+   1. Go to "New Chat"
+   2. Upload your study materials (PDF or TXT files)
+   3. Click "Upload File(s)" to process them
+   4. Click "Create Assistant" to set up your AI tutor
+   5. Name your study session and click "Start Chatting"
+
+7. In the chat:
+   - Ask questions about your materials
+   - Your AI tutor will respond based on your uploaded content
+
+8. Return to previous sessions anytime via "Chat History"
 
 ## Contributing
 
