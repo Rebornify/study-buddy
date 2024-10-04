@@ -2,7 +2,9 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 from mongoengine import connect
@@ -79,19 +81,30 @@ if mongo_uri:
 MODEL = 'gpt-4o-mini'
 
 # ----------------------------
+# Custom BytesIO Subclass
+# ----------------------------
+
+class NamedBytesIO(BytesIO):
+    """
+    A subclass of BytesIO that includes a 'name' attribute.
+    """
+    def __init__(self, initial_bytes: Optional[bytes] = None, name: Optional[str] = None) -> None:
+        super().__init__(initial_bytes)
+        self.name = name
+
+# ----------------------------
 # Helper Functions
 # ----------------------------
 
-def upload_to_openai(filepath):
+def upload_to_openai(named_upload_buffer: NamedBytesIO, filename: str) -> str:
     """Upload a file to OpenAI and return the file ID."""
     try:
-        with open(filepath, 'rb') as file:
-            response = client.files.create(file=file, purpose='assistants')
-        logging.debug(f"File uploaded to OpenAI with ID: {response.id}")
+        response = client.files.create(file=named_upload_buffer, purpose='assistants')
+        logging.debug(f"File '{filename}' uploaded to OpenAI with ID: {response.id}")
         return response.id
     except Exception as e:
-        logging.error(f"Failed to upload file {filepath}: {str(e)}")
-        st.sidebar.error(f"Failed to upload file {filepath}: {str(e)}")
+        logging.error(f"Failed to upload file {filename}: {str(e)}")
+        st.sidebar.error(f"Failed to upload file {filename}: {str(e)}")
         raise e
 
 def get_vector_store_files(vector_store_id):
@@ -124,25 +137,21 @@ def handle_file_upload(uploaded_files, current_user):
 
     for file in uploaded_files:
         if file.name not in current_files:
-            # Save the uploaded file to a temporary location
-            file_path = os.path.join(os.getcwd(), file.name)
-            with open(file_path, 'wb') as file_obj:
-                file_obj.write(file.getbuffer())
             try:
-                # Upload the file to OpenAI and attach it to the vector store
-                file_id = upload_to_openai(file_path)
+                # Use the NamedBytesIO subclass
+                named_upload_buffer = NamedBytesIO(file.getbuffer(), name=file.name)
+                
+                # Upload the file to OpenAI and associate it with the vector store
+                file_id = upload_to_openai(named_upload_buffer, named_upload_buffer.name)
                 client.beta.vector_stores.files.create(
                     vector_store_id=vector_store_id,
                     file_id=file_id
                 )
-                logging.debug(f'File "{file.name}" attached to vector store ID: {vector_store_id}')
-                st.sidebar.success(f'File "{file.name}" uploaded and attached successfully.')
+                logging.debug(f'File "{named_upload_buffer.name}" attached to vector store ID: {vector_store_id}')
+                st.sidebar.success(f'File "{named_upload_buffer.name}" uploaded and attached successfully.')
             except Exception as e:
                 st.sidebar.error(f'Error uploading file "{file.name}": {str(e)}')
                 logging.error(f'Error uploading file "{file.name}": {str(e)}')
-            finally:
-                # Remove the temporary file after processing
-                os.remove(file_path)
 
     st.sidebar.info("Files are being processed and will be available shortly.")
 
@@ -275,7 +284,7 @@ def create_new_chat(current_user):
     # Step 1: Upload Files
     st.header("Step 1: Upload Files")
     uploaded_files = st.file_uploader(
-        'Upload your study materials (PDF, TXT, etc.)',
+        'Upload your study materials (.pdf, .txt, etc.)',
         type=['pdf', 'txt'],
         key='file_upload',
         accept_multiple_files=True
