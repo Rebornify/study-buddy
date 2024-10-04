@@ -1,6 +1,5 @@
 import logging
 import os
-import time
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -375,7 +374,7 @@ def handle_chat_interface(selected_thread):
     saved_messages = get_messages(st.session_state.thread_id)
     for message in saved_messages:
         with st.chat_message(message.role):
-            st.markdown(message.content)
+            st.markdown(message.content, unsafe_allow_html=True)
 
     # Get user input
     prompt = st.chat_input('Ask a question or send a message')
@@ -397,53 +396,60 @@ def handle_chat_interface(selected_thread):
             logging.error(f"Failed to send message to OpenAI: {str(e)}")
             return
 
-        # Create a run and wait for completion
-        try:
-            run = client.beta.threads.runs.create(
-                thread_id=st.session_state.thread_id,
-                assistant_id=st.session_state.assistant_id
-            )
-        except Exception as e:
-            st.error(f"Failed to create run: {str(e)}")
-            logging.error(f"Failed to create run: {str(e)}")
-            return
-
         with st.spinner('Generating response...'):
             try:
-                # Poll the run status until it completes or times out
-                start_time = time.time()
-                timeout = 60  # seconds
-                while run.status not in ['completed', 'failed', 'cancelled'] and time.time() - start_time < timeout:
-                    logging.debug(f"Run status: {run.status}")
-                    time.sleep(1)
-                    run = client.beta.threads.runs.retrieve(
-                        thread_id=st.session_state.thread_id,
-                        run_id=run.id
-                    )
-                if run.status != 'completed':
-                    st.error(f'Run failed with status: {run.status}')
-                    logging.error(f'Run failed with status: {run.status}')
-                    return
+                run = client.beta.threads.runs.create_and_poll(
+                    thread_id=st.session_state.thread_id,
+                    assistant_id=st.session_state.assistant_id,
+                )
             except Exception as e:
-                st.error(f"Error while waiting for run completion: {str(e)}")
-                logging.error(f"Error while waiting for run completion: {str(e)}")
+                st.error(f"Failed to create and poll run: {str(e)}")
+                logging.error(f"Failed to create and poll run: {str(e)}")
                 return
 
-        # Retrieve and display assistant's response
+            # Check the run status after create_and_poll
+            if run.status != 'completed':
+                st.error(f'Run failed with status: {run.status}')
+                logging.error(f'Run failed with status: {run.status}')
+                return
+
+        # Retrieve and display the latest assistant's response with annotations handling
         try:
             messages = client.beta.threads.messages.list(thread_id=st.session_state.thread_id)
-            assistant_messages_for_run = [
-                message for message in messages
-                if message.run_id == run.id and message.role == 'assistant'
-            ]
 
-            for message in assistant_messages_for_run:
-                with st.chat_message('assistant'):
-                    st.markdown(message.content[0].text.value, unsafe_allow_html=True)
-                save_message(st.session_state.thread_id, 'assistant', message.content[0].text.value)
+            # Extract the message content
+            message_content = messages.data[0].content[0].text
+            annotations = message_content.annotations
+            # citations = []
+
+            # Iterate over the annotations and add footnotes
+            for index, annotation in enumerate(annotations, start=1):
+                # Replace the text with a footnote
+                message_content.value = message_content.value.replace(
+                    annotation.text, f' <sup>[{index}]</sup>'
+                )
+
+                # # Gather citations based on annotation attributes
+                # if (file_citation := getattr(annotation, 'file_citation', None)):
+                #     cited_file = client.files.retrieve(file_citation.file_id)
+                #     # citations.append(f'[{index}] {file_citation.quote} from {cited_file.filename}')
+                # elif (file_path := getattr(annotation, 'file_path', None)):
+                #     cited_file = client.files.retrieve(file_path.file_id)
+                #     # citations.append(f'[{index}] Click <here> to download {cited_file.filename}')
+                #     # Note: File download functionality not implemented above for brevity
+
+            # # Add footnotes to the end of the message before displaying to user
+            # message_content.value += '\n' + '\n'.join(citations)
+
+            # Display the modified assistant message
+            with st.chat_message('assistant'):
+                st.markdown(message_content.value, unsafe_allow_html=True)
+
+            # Save the modified message
+            save_message(st.session_state.thread_id, 'assistant', message_content.value)
         except Exception as e:
-            st.error(f"Failed to retrieve assistant messages: {str(e)}")
-            logging.error(f"Failed to retrieve assistant messages: {str(e)}")
+            st.error(f"Failed to retrieve assistant message: {str(e)}")
+            logging.error(f"Failed to retrieve assistant message: {str(e)}")
 
 # ----------------------------
 # Main Application
