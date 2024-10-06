@@ -174,6 +174,36 @@ def create_thread(title='New thread', assistant_id=None, vector_store_id=None, u
     logging.debug(f"Thread '{title}' created with ID: {new_thread.thread_id} for user: {user.username}")
     return new_thread
 
+def delete_thread(thread_id):
+    """Delete a thread and its associated messages from the database and OpenAI."""
+    try:
+        thread = Thread.objects(thread_id=thread_id).first()
+        if thread:
+            # Delete the thread from OpenAI
+            try:
+                response = client.beta.threads.delete(thread_id)
+                if not response.deleted:
+                    logging.error(f"Failed to delete thread {thread_id} from OpenAI.")
+                    return False
+            except Exception as e:
+                logging.error(f"Error deleting thread {thread_id} from OpenAI: {str(e)}")
+                return False
+
+            # Delete associated messages from local database
+            Message.objects(thread=thread).delete()
+            
+            # Delete the thread from local database
+            thread.delete()
+            
+            logging.debug(f"Thread {thread_id} and its messages deleted successfully from both OpenAI and local database.")
+            return True
+        else:
+            logging.warning(f"Thread {thread_id} not found for deletion.")
+            return False
+    except Exception as e:
+        logging.error(f"Error deleting thread {thread_id}: {str(e)}")
+        return False
+
 def create_assistant(vector_store_id):
     """Create an assistant using the provided vector_store_id."""
     try:
@@ -350,6 +380,13 @@ def select_thread_sidebar(current_user):
             options=[thread.thread_id for thread in threads],
             format_func=lambda x: next((thread.title for thread in threads if thread.thread_id == x), "Unknown Thread")
         )
+
+        if st.sidebar.button("Delete Selected Thread"):
+            if delete_thread(selected_thread_id):
+                st.sidebar.success("Thread deleted successfully.")
+                st.session_state.thread_id = None
+            else:
+                st.sidebar.error("Failed to delete the thread.")
 
         st.session_state.thread_id = selected_thread_id
         return Thread.objects(thread_id=selected_thread_id).first()
