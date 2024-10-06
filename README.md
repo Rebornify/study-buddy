@@ -47,8 +47,12 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
    - Create a `.env` file in the project root directory with the following content:
      ```
      OPENAI_API_KEY=your-openai-api-key
-     MONGO_CONNECTION_STRING=your-mongodb-connection-string
+     MONGODB_URI=mongodb://localhost:27017/study_buddy
      ```
+   - Replace `your-openai-api-key` with your actual OpenAI API key.
+   - The MongoDB URI is pre-configured for a local MongoDB instance with a database named "study_buddy". You can customize this as follows:
+     - To use a different database name: Change only the last part of the URI (e.g., `mongodb://localhost:27017/my_custom_db`).
+     - To connect to a remote MongoDB instance: Replace the entire URI with your specific connection string provided by your MongoDB service.
 
 7. Configure the `config.yaml` file:
    - Create a `config.yaml` file in the project root with the following structure:
@@ -69,7 +73,7 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
 
 2. Run the application:
    ```
-   streamlit run main.py
+   streamlit run src/main.py
    ```
 
 3. Open your web browser and go to `http://localhost:8501`
