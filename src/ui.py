@@ -1,17 +1,19 @@
 import logging
-from datetime import datetime, timezone
 
 import streamlit as st
 
 from config import client
-from models import Thread
+from models import Thread, File, VectorStore, Assistant
 from utils import (
+    create_vector_store,
     create_assistant,
     create_thread,
     delete_thread,
     get_messages,
     get_threads,
-    get_vector_store_files,
+    get_user_files,
+    get_user_vector_stores,
+    get_user_assistants,
     handle_file_upload,
     save_message
 )
@@ -33,8 +35,20 @@ def create_new_chat(current_user):
     """Create a new chat session."""
     st.title("Start a New Chat")
 
-    # Step 1: Upload Files
-    st.header("Step 1: Upload Files")
+    # Step 1: Select or Upload Files
+    st.header("Step 1: Select or Upload Files")
+
+    # Display user's uploaded files
+    user_files = get_user_files(current_user)
+    file_options = [f.name for f in user_files]
+
+    selected_files = st.multiselect(
+        "Select from your uploaded files:",
+        options=file_options
+    )
+
+    # Allow user to upload new files
+    st.write("Or upload new files:")
     uploaded_files = st.file_uploader(
         'Upload your study materials (.pdf, .txt, etc.)',
         type=['pdf', 'txt'],
@@ -44,43 +58,123 @@ def create_new_chat(current_user):
 
     if st.button('Upload File(s)'):
         if uploaded_files:
-            # Create vector store and handle file upload
-            timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
-            vector_store = client.beta.vector_stores.create(name=f'Study Buddy Vector Store - {timestamp}')
-            st.session_state.vector_store_id = vector_store.id
             handle_file_upload(uploaded_files, current_user)
+            # Refresh file options after upload
+            st.rerun()
         else:
             st.warning('Please select at least one file to upload.')
 
-    # Display Uploaded Files
-    if st.session_state.get('vector_store_id'):
-        st.subheader("Uploaded Files:")
-        files = get_vector_store_files(st.session_state.vector_store_id)
-        if files:
-            for file in files:
-                st.write(f'- {file["name"]}')
-        else:
-            st.info("No files uploaded yet.")
+    # Step 2: Select Existing Vector Store or Create New Vector Store
+    st.header("Step 2: Select Existing Vector Store or Create New Vector Store")
 
-    # Step 2: Create Assistant
-    st.header("Step 2: Create Assistant")
-    if st.button('Create Assistant'):
-        if not st.session_state.get('vector_store_id'):
-            st.warning('Please upload files before creating assistant.')
-        else:
-            try:
-                assistant_id = create_assistant(st.session_state.vector_store_id)
-                st.session_state.assistant_id = assistant_id
-                st.success('Assistant created successfully!')
-            except Exception as e:
-                st.error(f'Error creating assistant: {str(e)}')
+    vector_stores = get_user_vector_stores(current_user)
+    vector_store_options = [vs.name for vs in vector_stores]
 
-    # Step 3: Start Chatting
-    st.header("Step 3: Start Chatting")
+    if vector_store_options:
+        vector_store_selection = st.radio(
+            "Would you like to select an existing vector store or create a new one?",
+            options=["Select Existing Vector Store", "Create New Vector Store"]
+        )
+    else:
+        st.info("You have no existing vector stores. Please create a new vector store.")
+        vector_store_selection = "Create New Vector Store"
+
+    if vector_store_selection == "Select Existing Vector Store":
+        selected_vector_store_name = st.selectbox(
+            "Select a vector store:",
+            options=vector_store_options
+        )
+        if selected_vector_store_name:
+            selected_vector_store = VectorStore.objects(name=selected_vector_store_name, user=current_user).first()
+            if selected_vector_store:
+                st.session_state.vector_store_id = selected_vector_store.vector_store_id
+                st.success(f'Selected vector store: {selected_vector_store.name}')
+            else:
+                st.error('Selected vector store not found.')
+        else:
+            st.warning('No vector stores available to select.')
+    elif vector_store_selection == "Create New Vector Store":
+        vector_store_name = st.text_input(
+            'Enter a name for the new vector store:',
+            placeholder='e.g., My Study Materials'
+        )
+        if st.button('Create Vector Store'):
+            if not vector_store_name.strip():
+                st.warning('Please enter a name for the new vector store.')
+            elif selected_files:
+                # Get File IDs of selected files
+                selected_file_objs = File.objects(name__in=selected_files, user=current_user)
+                selected_file_ids = [f.file_id for f in selected_file_objs]
+
+                # Create vector store and associate files
+                vector_store_id = create_vector_store(vector_store_name, selected_file_ids, current_user)
+                if vector_store_id:
+                    st.session_state.vector_store_id = vector_store_id
+                    st.success(f'Vector store "{vector_store_name}" created successfully.')
+                    st.rerun()  # Refresh the app to update the UI
+                else:
+                    st.error('Failed to create vector store.')
+            else:
+                st.warning('Please select at least one file to associate with the vector store.')
+
+    # Step 3: Select Existing Assistant or Create New Assistant
+    st.header("Step 3: Select Existing Assistant or Create New Assistant")
+
+    assistants = get_user_assistants(current_user)
+    assistant_options = [assistant.name for assistant in assistants]
+
+    if assistant_options:
+        assistant_selection = st.radio(
+            "Would you like to select an existing assistant or create a new one?",
+            options=["Select Existing Assistant", "Create New Assistant"]
+        )
+    else:
+        st.info("You have no existing assistants. Please create a new assistant.")
+        assistant_selection = "Create New Assistant"
+
+    if assistant_selection == "Select Existing Assistant":
+        selected_assistant_name = st.selectbox(
+            "Select an assistant:",
+            options=assistant_options
+        )
+        if selected_assistant_name:
+            selected_assistant = Assistant.objects(name=selected_assistant_name, user=current_user).first()
+            if selected_assistant:
+                st.session_state.assistant_id = selected_assistant.assistant_id
+                st.session_state.vector_store_id = selected_assistant.vector_store.vector_store_id
+                st.success(f'Selected assistant: {selected_assistant.name}')
+                st.info(f"This assistant is associated with vector store: {selected_assistant.vector_store.name}")
+            else:
+                st.error('Selected assistant not found.')
+        else:
+            st.warning('No assistants available to select.')
+
+    elif assistant_selection == "Create New Assistant":
+        assistant_name = st.text_input(
+            'Enter a name for the new assistant:',
+            placeholder='e.g., My Study Assistant'
+        )
+        if st.button('Create Assistant'):
+            if not assistant_name.strip():
+                st.warning('Please enter a name for the new assistant.')
+            elif not st.session_state.get('vector_store_id'):
+                st.warning('Please select or create a vector store before creating an assistant.')
+            else:
+                try:
+                    # Create assistant and save to database
+                    assistant_id = create_assistant(assistant_name, st.session_state.vector_store_id, current_user)
+                    st.session_state.assistant_id = assistant_id
+                    st.success('Assistant created successfully!')
+                    st.rerun()  # Refresh the app to update the UI
+                except Exception as e:
+                    st.error(f'Error creating assistant: {str(e)}')
+
+    # Step 4: Start Chatting
+    st.header("Step 4: Start Chatting")
     thread_title = st.text_input('Enter a title for this thread:', 'New thread')
-    if st.button('Start Chatting'):
+    if st.button('Start Chat'):
         if not st.session_state.get('assistant_id'):
-            st.warning('Please create an assistant before starting chat.')
+            st.warning('Please select or create an assistant before proceeding.')
         else:
             try:
                 create_thread(
@@ -91,6 +185,7 @@ def create_new_chat(current_user):
                 )
                 st.success('Chat started successfully! You can now interact with your assistant from the Chat History section.')
             except Exception as e:
+                logging.error(f"Error creating thread: {str(e)}")
                 st.error(f'Error creating thread: {str(e)}')
 
 def select_thread_sidebar(current_user):
