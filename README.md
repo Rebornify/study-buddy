@@ -55,11 +55,12 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
      - To connect to a remote MongoDB instance: Replace the entire URI with your specific connection string provided by your MongoDB service.
 
 7. Configure the `config.yaml` file:
-   - Create a `config.yaml` file in the project root with the following structure:
+   - A template `config.yaml` file is provided in the project root. You can use this as-is or modify it according to your needs.
+   - The default `config.yaml` contains:
      ```yaml
      cookie:
        expiry_days: 30
-       key: your_secret_key  # Must be a string
+       key: your_secret_key
        name: study_buddy_cookie
      credentials:
        usernames:

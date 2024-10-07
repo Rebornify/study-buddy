@@ -1,0 +1,6 @@
+cookie:
+  expiry_days: 30
+  key: your_secret_key
+  name: study_buddy_cookie
+credentials:
+  usernames:
