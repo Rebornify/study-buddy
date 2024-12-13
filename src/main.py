@@ -21,25 +21,28 @@ def main():
     # If the user is authenticated, hide login/register and show the app content
     if authentication_status:
         # Sidebar for navigation after successful login
-        st.sidebar.title(f"Welcome, {st.session_state['name']}")
+        st.sidebar.title(f"Welcome, {st.session_state['name']}!")
         authenticator.logout('Logout', 'sidebar')
 
         # Get current user details based on the username (stored in session state)
         current_user = get_current_user(st.session_state['username'])
 
         # Navigation in sidebar
-        app_page = st.sidebar.radio("Navigate to", ["Home", "New Chat", "Chat History"])
+        app_page = st.sidebar.radio(
+            "Navigation Menu",
+            ["Home", "New Study Session", "Previous Sessions"]
+        )
 
         if app_page == "Home":
             display_home(current_user)
-        elif app_page == "New Chat":
+        elif app_page == "New Study Session":
             create_new_chat(current_user)
-        elif app_page == "Chat History":
+        elif app_page == "Previous Sessions":
             selected_thread = select_thread_sidebar(current_user)
             if selected_thread:
                 display_thread(selected_thread)
             else:
-                st.info("No thread selected or no threads available. Start by creating a new chat.")
+                st.info("No previous study sessions found. Start by creating a new study session!")
 
     # If the user is not authenticated, show login/register options
     else:
@@ -47,7 +50,7 @@ def main():
         page = st.sidebar.radio("Choose Action", ["Login", "Register"])
 
         if page == "Login":
-            # Authentication process (No need to unpack return values when using 'main')
+            # Authentication process
             authenticator.login('main')
 
             # Handle authentication status from session state
@@ -58,11 +61,10 @@ def main():
 
         elif page == "Register":
             st.title("Register")
-            # Allow new user registration even if credentials exist
             try:
                 email, username, name = authenticator.register_user(location='main', key='register')
                 if email:
-                    st.success("User registered successfully! You can now log in.")
+                    st.success("Registration successful! You can now log in to start your study journey.")
                     # Save the user to MongoDB
                     save_user(username, name, email)
             except Exception as e:
