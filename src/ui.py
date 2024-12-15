@@ -17,6 +17,8 @@ from utils import (
     handle_file_upload,
     save_message
 )
+from openai.types.beta.assistant_stream_event import ThreadMessageDelta
+from openai.types.beta.threads.text_delta_block import TextDeltaBlock
 
 def display_home(current_user):
     """Display the home page."""
@@ -285,44 +287,47 @@ def handle_chat_interface(selected_thread):
             logging.error(f"Failed to send message to OpenAI: {str(e)}")
             return
 
-        with st.spinner('Generating response...'):
+        # Stream the assistant's response
+        with st.chat_message('assistant'):
+            streaming_display = st.empty()  # Container for displaying streaming content
+            assistant_response = ""         # Accumulates the complete response
+            
             try:
-                run = client.beta.threads.runs.create_and_poll(
+                stream = client.beta.threads.runs.create(
                     thread_id=st.session_state.thread_id,
                     assistant_id=st.session_state.assistant_id,
+                    stream=True
                 )
+                
+                for event in stream:
+                    if isinstance(event, ThreadMessageDelta):
+                        if isinstance(event.data.delta.content[0], TextDeltaBlock):
+                            streaming_display.empty()
+                            assistant_response += event.data.delta.content[0].text.value
+                            streaming_display.markdown(assistant_response)
+                
+                # After streaming completes, handle annotations
+                messages = client.beta.threads.messages.list(
+                    thread_id=st.session_state.thread_id
+                )
+                
+                # Extract the message content
+                message_content = messages.data[0].content[0].text
+                annotations = message_content.annotations
+
+                # Iterate over the annotations and add footnotes
+                for index, annotation in enumerate(annotations, start=1):
+                    # Replace the text with a footnote
+                    assistant_response = assistant_response.replace(
+                        annotation.text, f' <sup>[{index}]</sup>'
+                    )
+                
+                # Update the display with annotations
+                streaming_display.markdown(assistant_response, unsafe_allow_html=True)
+
+                # Save the final message with annotations
+                save_message(st.session_state.thread_id, 'assistant', assistant_response)
+                
             except Exception as e:
-                st.error(f"Failed to create and poll run: {str(e)}")
-                logging.error(f"Failed to create and poll run: {str(e)}")
-                return
-
-            # Check the run status after create_and_poll
-            if run.status != 'completed':
-                st.error(f'Run failed with status: {run.status}')
-                logging.error(f'Run failed with status: {run.status}')
-                return
-
-        # Retrieve and display the latest assistant's response with annotations handling
-        try:
-            messages = client.beta.threads.messages.list(thread_id=st.session_state.thread_id)
-
-            # Extract the message content
-            message_content = messages.data[0].content[0].text
-            annotations = message_content.annotations
-
-            # Iterate over the annotations and add footnotes
-            for index, annotation in enumerate(annotations, start=1):
-                # Replace the text with a footnote
-                message_content.value = message_content.value.replace(
-                    annotation.text, f' <sup>[{index}]</sup>'
-                )
-
-            # Display the modified assistant message
-            with st.chat_message('assistant'):
-                st.markdown(message_content.value, unsafe_allow_html=True)
-
-            # Save the modified message
-            save_message(st.session_state.thread_id, 'assistant', message_content.value)
-        except Exception as e:
-            st.error(f"Failed to retrieve assistant message: {str(e)}")
-            logging.error(f"Failed to retrieve assistant message: {str(e)}")
+                st.error(f"Error during streaming: {str(e)}")
+                logging.error(f"Error during streaming: {str(e)}")
