@@ -1,5 +1,6 @@
 openai
-streamlit
+streamlit>=1.42.0
 python-dotenv
 mongoengine
-streamlit_authenticator
+authlib>=1.3.2
+# streamlit_authenticator - No longer needed

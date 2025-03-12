@@ -270,6 +270,26 @@ def get_current_user(username):
     """Fetch the current user from the database based on username."""
     return User.objects(username=username).first()
 
+def get_or_create_user_from_google(email, name):
+    """Get or create a user from Google authentication data."""
+    # Create a username from the email (remove @ and domain)
+    username = email.split('@')[0]
+    
+    # Check if user exists
+    user = User.objects(email=email).first()
+    
+    if not user:
+        # Create new user if not exists
+        user = User(
+            username=username,
+            name=name,
+            email=email
+        )
+        user.save()
+        logging.debug(f"New Google user {username} successfully saved to MongoDB.")
+    
+    return user
+
 def initialize_session_state():
     """Initialize the session state with default values."""
     defaults = {

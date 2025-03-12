@@ -3,11 +3,9 @@ import os
 from pathlib import Path
 
 import streamlit as st
-import yaml
 from dotenv import load_dotenv
 from mongoengine import connect
 from openai import OpenAI
-from yaml.loader import SafeLoader
 
 # ----------------------------
 # Configuration and Setup
@@ -19,10 +17,6 @@ st.set_page_config(
     layout="wide",
     page_icon=':books:'
 )
-
-# Load configuration from 'config.yaml' file
-with open('config.yaml') as file:
-    config = yaml.load(file, Loader=SafeLoader)
 
 # Configure logging settings
 logging.basicConfig(

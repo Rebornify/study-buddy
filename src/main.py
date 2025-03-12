@@ -1,32 +1,45 @@
 import streamlit as st
-import streamlit_authenticator as stauth
 
-from config import config
 from ui import create_new_chat, display_home, display_thread, select_thread_sidebar
-from utils import get_current_user, save_user
+from utils import get_or_create_user_from_google
 
 def main():
     """Main function to run the Streamlit app."""
-    # Initialize the authenticator object using the credentials from the config
-    authenticator = stauth.Authenticate(
-        'config.yaml',
-        config['cookie']['name'],
-        config['cookie']['key'],
-        config['cookie']['expiry_days']
-    )
-
-    # Access the authentication status from st.session_state
-    authentication_status = st.session_state.get('authentication_status')
-
-    # If the user is authenticated, hide login/register and show the app content
-    if authentication_status:
+    # Check if user is logged in
+    if not st.experimental_user.is_logged_in:
+        # Display login option
+        st.title("Study Buddy")
+        st.header("Welcome to Study Buddy!")
+        st.write("Study Buddy is an AI-powered chat application that helps students learn and study effectively using their own study materials.")
+        st.write("Please log in with your Google account to get started.")
+        
+        if st.button("Log in with Google"):
+            st.login()
+            
+        # Show information about the app for unauthenticated users
+        st.subheader("What is Study Buddy?")
+        st.write("""
+        Study Buddy helps you:
+        - Upload your study materials (PDF, TXT) for AI-assisted learning
+        - Organize your learning with personalized study sessions
+        - Chat with an AI tutor that references your materials
+        - Review and continue previous study conversations
+        """)
+    else:
+        # User is authenticated - access user information
+        user_email = st.experimental_user.email
+        user_name = st.experimental_user.name
+        
+        # Get or create user in database
+        current_user = get_or_create_user_from_google(user_email, user_name)
+        
         # Sidebar for navigation after successful login
-        st.sidebar.title(f"Welcome, {st.session_state['name']}!")
-        authenticator.logout('Logout', 'sidebar')
-
-        # Get current user details based on the username (stored in session state)
-        current_user = get_current_user(st.session_state['username'])
-
+        st.sidebar.title(f"Welcome, {user_name}!")
+        
+        # Logout button in sidebar
+        if st.sidebar.button("Logout"):
+            st.logout()
+            
         # Navigation in sidebar
         app_page = st.sidebar.radio(
             "Navigation Menu",
@@ -43,32 +56,6 @@ def main():
                 display_thread(selected_thread)
             else:
                 st.info("No previous study sessions found. Start by creating a new study session!")
-
-    # If the user is not authenticated, show login/register options
-    else:
-        # Option for Login or Registration
-        page = st.sidebar.radio("Choose Action", ["Login", "Register"])
-
-        if page == "Login":
-            # Authentication process
-            authenticator.login('main')
-
-            # Handle authentication status from session state
-            if st.session_state.get('authentication_status') == False:
-                st.error("Username/password is incorrect")
-            elif st.session_state.get('authentication_status') is None:
-                st.warning("Please enter your username and password")
-
-        elif page == "Register":
-            st.title("Register")
-            try:
-                email, username, name = authenticator.register_user(location='main', key='register')
-                if email:
-                    st.success("Registration successful! You can now log in to start your study journey.")
-                    # Save the user to MongoDB
-                    save_user(username, name, email)
-            except Exception as e:
-                st.error(f"Registration failed: {str(e)}")
 
 if __name__ == "__main__":
     main()
