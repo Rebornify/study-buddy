@@ -4,8 +4,8 @@ from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
-from mongoengine import connect
 from openai import OpenAI
+from db_setup import initialize_db
 
 # ----------------------------
 # Configuration and Setup
@@ -58,11 +58,10 @@ if api_key:
 
 if mongo_uri:
     try:
-        connect(host=mongo_uri)
-        logging.debug("Connected to MongoDB.")
+        initialize_db(mongo_uri)
     except Exception as e:
-        logging.error(f"Failed to connect to MongoDB: {str(e)}")
-        st.error(f"Failed to connect to MongoDB: {str(e)}")
+        logging.error(f"Failed to initialize MongoDB: {str(e)}")
+        st.error(f"Failed to initialize MongoDB: {str(e)}")
 
 # Define the model to be used for the assistant
 MODEL = 'gpt-4o-mini'
