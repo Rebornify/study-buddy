@@ -72,9 +72,26 @@ def get_user_files(user):
     return File.objects(user=user)
 
 def create_vector_store(name, selected_file_ids, current_user):
-    """Create a new vector store and associate selected files."""
+    """Create a new vector store and associate selected files, or reuse existing one."""
     try:
-        # Create vector store via OpenAI API
+        # Check for existing vector stores with same files
+        existing_vector_stores = VectorStore.objects(user=current_user)
+        
+        for vs in existing_vector_stores:
+            try:
+                vs_files = client.beta.vector_stores.files.list(vector_store_id=vs.vector_store_id)
+                vs_file_ids = [file.id for file in vs_files.data]
+                
+                # Check if existing vector store has the exact same files
+                if set(vs_file_ids) == set(selected_file_ids) and len(vs_file_ids) == len(selected_file_ids):
+                    logging.info(f'Reusing existing vector store "{vs.name}" with ID: {vs.vector_store_id}')
+                    # Return the existing vector store ID WITHOUT updating its name
+                    return vs.vector_store_id
+            except Exception as e:
+                logging.warning(f'Error checking files for vector store {vs.vector_store_id}: {str(e)}')
+                continue
+                
+        # No matching vector store found, create a new one
         vector_store = client.beta.vector_stores.create(name=name)
         vector_store_id = vector_store.id
 
@@ -129,8 +146,18 @@ def get_user_vector_stores(user):
     return VectorStore.objects(user=user)
 
 def create_assistant(name, vector_store_id, user):
-    """Create an assistant using the provided vector_store_id and save it to the database."""
+    """Create an assistant using the provided vector_store_id or reuse existing one."""
     try:
+        # Check if an assistant already exists for this vector store
+        vector_store = VectorStore.objects(vector_store_id=vector_store_id).first()
+        existing_assistant = Assistant.objects(vector_store=vector_store, user=user).first()
+        
+        if existing_assistant:
+            logging.info(f"Reusing existing assistant with ID: {existing_assistant.assistant_id}")
+            # Set success message in session state
+            st.session_state.assistant_created = True
+            return existing_assistant.assistant_id
+            
         # Define the assistant's instructions and tools
         assistant_instructions = (
             "You are an AI study assistant called 'Study Buddy'. Your role is to help students learn and understand various concepts in their field of study.\n\n"
@@ -140,6 +167,11 @@ def create_assistant(name, vector_store_id, user):
             "Tailor your responses to the student's level of understanding and learning style. Adapt your explanations and examples to make the content more relatable and accessible.\n\n"
             "Remember, your goal is to empower the student to grasp the material effectively and develop a strong foundation in their chosen field of study."
         )
+        
+        # Generate a default name based on the vector store if not provided
+        if not name or name.strip() == '':
+            name = f"Assistant for {vector_store.name}" if vector_store else "Study Buddy Assistant"
+            
         # Create the assistant via OpenAI API
         assistant = client.beta.assistants.create(
             instructions=assistant_instructions,
@@ -154,7 +186,6 @@ def create_assistant(name, vector_store_id, user):
         logging.debug(f"Assistant created with ID: {assistant.id}")
 
         # Save the assistant to the database
-        vector_store = VectorStore.objects(vector_store_id=vector_store_id).first()
         new_assistant = Assistant(
             assistant_id=assistant.id,
             name=name,
@@ -301,3 +332,27 @@ def initialize_session_state():
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
     logging.debug(f"Session state initialized with keys: {', '.join(defaults.keys())}")
+
+def check_existing_vector_store(selected_file_ids, current_user):
+    """
+    Check if a vector store with the exact same files already exists.
+    Returns (exists, vector_store) tuple where:
+    - exists: boolean indicating if a match was found
+    - vector_store: the matching VectorStore object if found, None otherwise
+    """
+    existing_vector_stores = VectorStore.objects(user=current_user)
+    
+    for vs in existing_vector_stores:
+        try:
+            vs_files = client.beta.vector_stores.files.list(vector_store_id=vs.vector_store_id)
+            vs_file_ids = [file.id for file in vs_files.data]
+            
+            # Check if existing vector store has the exact same files
+            if set(vs_file_ids) == set(selected_file_ids) and len(vs_file_ids) == len(selected_file_ids):
+                logging.info(f'Found existing vector store "{vs.name}" with ID: {vs.vector_store_id}')
+                return True, vs
+        except Exception as e:
+            logging.warning(f'Error checking files for vector store {vs.vector_store_id}: {str(e)}')
+            continue
+    
+    return False, None

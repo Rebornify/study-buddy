@@ -13,9 +13,10 @@ from utils import (
     get_threads,
     get_user_files,
     get_user_vector_stores,
-    get_user_assistants,
     handle_file_upload,
-    save_message
+    save_message,
+    get_vector_store_files,
+    check_existing_vector_store
 )
 from openai.types.beta.assistant_stream_event import ThreadMessageDelta
 from openai.types.beta.threads.text_delta_block import TextDeltaBlock
@@ -35,10 +36,16 @@ def display_home(current_user):
 
 def create_new_chat(current_user):
     """Create a new chat session."""
-    st.title("Start a New Chat")
+    st.title("Start a New Study Session")
+    
+    # Display any persistent success messages from previous actions
+    if st.session_state.get('persistent_success_message'):
+        st.success(st.session_state.get('persistent_success_message'))
+        # Clear after displaying once
+        st.session_state.pop('persistent_success_message')
 
     # Step 1: Select or Upload Files
-    st.header("Step 1: Select or Upload Files")
+    st.header("Step 1: Select Your Study Materials")
 
     # Display user's uploaded files
     user_files = get_user_files(current_user)
@@ -49,6 +56,13 @@ def create_new_chat(current_user):
         options=file_options
     )
 
+    # Display summary of selected files
+    if selected_files:
+        st.success(f"Selected {len(selected_files)} file(s)")
+        with st.expander("Selected files", expanded=True):
+            for file_name in selected_files:
+                st.write(f"- {file_name}")
+    
     # Allow user to upload new files
     st.write("Or upload new files:")
     
@@ -84,8 +98,8 @@ def create_new_chat(current_user):
                     
                     progress_bar.progress(1.0)
                     status_text.text('All files processed successfully!')
-                    st.success(f'{total_files} new file(s) uploaded successfully!')
-                    # Refresh file options after upload
+                    # Store success message in session state instead of displaying directly
+                    st.session_state.persistent_success_message = f'{total_files} new file(s) uploaded successfully!'
                     st.rerun()
             except Exception as e:
                 st.error(f'Error uploading files: {str(e)}')
@@ -95,39 +109,80 @@ def create_new_chat(current_user):
         else:
             st.warning('Please select at least one file to upload.')
 
-    # Step 2: Select or Create Vector Store
+    # Step 2: Create or Select Study Collection
     st.header("Step 2: Organize Your Study Materials")
 
+    # Get existing vector stores for reuse
     vector_stores = get_user_vector_stores(current_user)
     vector_store_options = [vs.name for vs in vector_stores]
-
+    
+    # Allow selection from existing collections or create a new one
     if vector_store_options:
-        vector_store_selection = st.radio(
-            "Would you like to use existing study materials or create new ones?",
-            options=["Use Existing", "Create New"]
-        )
+        # Check if we need to force "Use Existing" due to a reused vector store
+        if st.session_state.get('force_use_existing', False):
+            collection_selection = "Use Existing"
+            # Reset the flag after using it
+            st.session_state.force_use_existing = False
+        else:
+            collection_selection = st.radio(
+                "Would you like to use an existing collection or create a new one?",
+                options=["Use Existing", "Create New"]
+            )
     else:
-        st.info("You'll need to create a new collection of study materials.")
-        vector_store_selection = "Create New"
+        st.info("You'll need to create a new collection for your study materials.")
+        collection_selection = "Create New"
 
-    if vector_store_selection == "Use Existing":
-        selected_vector_store_name = st.selectbox(
-            "Select your study materials:",
-            options=vector_store_options
+    # Use existing collection
+    if collection_selection == "Use Existing":
+        # Pre-select the collection if we just reused one
+        default_index = 0
+        if st.session_state.get('last_used_collection') in vector_store_options:
+            default_index = vector_store_options.index(st.session_state.get('last_used_collection'))
+        
+        selected_collection = st.selectbox(
+            "Select a collection of study materials:",
+            options=vector_store_options,
+            index=default_index
         )
-        if selected_vector_store_name:
-            selected_vector_store = VectorStore.objects(name=selected_vector_store_name, user=current_user).first()
-            if selected_vector_store:
-                st.session_state.vector_store_id = selected_vector_store.vector_store_id
-                st.success(f'Selected materials: {selected_vector_store.name}')
-            else:
-                st.error('Selected study materials not found.')
-    else:  # Create New
+        if selected_collection:
+            selected_vs = VectorStore.objects(name=selected_collection, user=current_user).first()
+            if selected_vs:
+                st.session_state.vector_store_id = selected_vs.vector_store_id
+                
+                # Get file information first to include in consolidated message
+                file_count = 0
+                file_list = []
+                try:
+                    files = get_vector_store_files(selected_vs.vector_store_id)
+                    file_count = len(files)
+                    file_list = files
+                except Exception as e:
+                    logging.error(f"Error fetching vector store files: {str(e)}")
+                
+                # Check for existing assistant for this vector store
+                existing_assistant = Assistant.objects(vector_store=selected_vs, user=current_user).first()
+                if existing_assistant:
+                    st.session_state.assistant_id = existing_assistant.assistant_id
+                    
+                    # Show a single consolidated info message with file count
+                    st.info(f"📚 Study Collection: **{selected_collection}** with assistant ready to use ({file_count} file{'s' if file_count != 1 else ''})")
+                else:
+                    # No assistant exists yet
+                    st.info(f"📚 Study Collection: **{selected_collection}** selected ({file_count} file{'s' if file_count != 1 else ''})")
+                    # We'll create the assistant in step 3
+                
+                # Show files associated with this collection in a more compact way
+                if file_list:
+                    with st.expander("View files in this collection"):
+                        for file in file_list:
+                            st.write(f"- {file['name']}")
+    # Create new collection
+    else:
         vector_store_name = st.text_input(
             'Name for your study materials:',
             placeholder='e.g., Physics Chapter 1, Math Notes, etc.'
         )
-        if st.button('Create Collection', help='Create a new collection of study materials'):
+        if st.button('Create Collection'):
             if not vector_store_name.strip():
                 st.warning('Please enter a name for your study materials.')
             elif selected_files:
@@ -135,67 +190,57 @@ def create_new_chat(current_user):
                 selected_file_objs = File.objects(name__in=selected_files, user=current_user)
                 selected_file_ids = [f.file_id for f in selected_file_objs]
 
-                # Create vector store and associate files
-                vector_store_id = create_vector_store(vector_store_name, selected_file_ids, current_user)
-                if vector_store_id:
-                    st.session_state.vector_store_id = vector_store_id
-                    st.success(f'Study materials "{vector_store_name}" created successfully.')
+                # First check if a collection with the same files already exists
+                exists, existing_vs = check_existing_vector_store(selected_file_ids, current_user)
+                
+                if exists and existing_vs:
+                    # Use the existing vector store instead of creating a new one
+                    st.session_state.vector_store_id = existing_vs.vector_store_id
+                    st.info(f"Using existing collection '{existing_vs.name}' with the same files instead of creating a duplicate.")
+                    
+                    # Force the UI to "Use Existing" on next rerun
+                    st.session_state.force_use_existing = True
+                    st.session_state.last_used_collection = existing_vs.name
+                    
+                    # Check for existing assistant for this vector store
+                    existing_assistant = Assistant.objects(vector_store=existing_vs, user=current_user).first()
+                    if existing_assistant:
+                        st.session_state.assistant_id = existing_assistant.assistant_id
+                        # Store success message in session state instead of displaying directly
+                        st.session_state.persistent_success_message = 'Existing study materials and assistant ready to use!'
+                    else:
+                        # Create assistant if it doesn't exist
+                        assistant_id = create_assistant("", existing_vs.vector_store_id, current_user)
+                        if assistant_id:
+                            st.session_state.assistant_id = assistant_id
+                            # Store success message in session state instead of displaying directly
+                            st.session_state.persistent_success_message = 'Existing study materials connected to a new assistant!'
+                        else:
+                            st.error('Failed to set up assistant for your study materials.')
+                    
                     st.rerun()
                 else:
-                    st.error('Failed to create study materials.')
+                    # Create new vector store and associate files
+                    vector_store_id = create_vector_store(vector_store_name, selected_file_ids, current_user)
+                    if vector_store_id:
+                        st.session_state.vector_store_id = vector_store_id
+                        
+                        # Automatically create assistant for this vector store
+                        assistant_id = create_assistant("", vector_store_id, current_user)
+                        if assistant_id:
+                            st.session_state.assistant_id = assistant_id
+                            # Store success message in session state instead of displaying directly
+                            st.session_state.persistent_success_message = 'Study materials and assistant created and ready to use!'
+                        else:
+                            st.error('Failed to set up assistant for your study materials.')
+                        st.rerun()
+                    else:
+                        st.error('Failed to create study materials.')
             else:
                 st.warning('Please select at least one file above.')
 
-    # Step 3: Select or Create Assistant
-    st.header("Step 3: Choose Your Study Assistant")
-
-    assistants = get_user_assistants(current_user)
-    assistant_options = [assistant.name for assistant in assistants]
-
-    if assistant_options:
-        assistant_selection = st.radio(
-            "Would you like to use an existing assistant or create a new one?",
-            options=["Use Existing", "Create New"]
-        )
-    else:
-        st.info("You'll need to create a new study assistant.")
-        assistant_selection = "Create New"
-
-    if assistant_selection == "Use Existing":
-        selected_assistant_name = st.selectbox(
-            "Select your study assistant:",
-            options=assistant_options
-        )
-        if selected_assistant_name:
-            selected_assistant = Assistant.objects(name=selected_assistant_name, user=current_user).first()
-            if selected_assistant:
-                st.session_state.assistant_id = selected_assistant.assistant_id
-                if selected_assistant.vector_store:
-                    st.info(f"This assistant was last used with: {selected_assistant.vector_store.name}")
-            else:
-                st.error('Selected assistant not found.')
-    else:  # Create New
-        assistant_name = st.text_input(
-            'Name for your study assistant:',
-            placeholder='e.g., Physics Tutor, Math Helper, etc.'
-        )
-        if st.button('Create Assistant', help='Create a new study assistant'):
-            if not assistant_name.strip():
-                st.warning('Please enter a name for your assistant.')
-            elif not st.session_state.get('vector_store_id'):
-                st.warning('Please select or create study materials first.')
-            else:
-                try:
-                    assistant_id = create_assistant(assistant_name, st.session_state.vector_store_id, current_user)
-                    if assistant_id:
-                        st.session_state.assistant_id = assistant_id
-                        st.success('Assistant created successfully!')
-                        st.rerun()
-                except Exception as e:
-                    st.error(f'Error creating assistant: {str(e)}')
-
-    # Step 4: Start Your Study Session
-    st.header("Step 4: Start Your Study Session")
+    # Step 3: Start Your Study Session (simplified - no separate assistant creation step)
+    st.header("Step 3: Start Your Study Session")
     
     # Show helpful context about what's selected
     if st.session_state.get('vector_store_id'):
@@ -203,13 +248,27 @@ def create_new_chat(current_user):
         if vs:
             st.info(f"📚 Study Materials: {vs.name}")
     
-    if st.session_state.get('assistant_id'):
-        asst = Assistant.objects(assistant_id=st.session_state.assistant_id).first()
-        if asst:
-            st.info(f"🤖 Study Assistant: {asst.name}")
-    
     session_title = st.text_input('Title for this study session:', 'New study session')
+    
+    # Check if both vector store and assistant are ready
     start_disabled = not (st.session_state.get('assistant_id') and st.session_state.get('vector_store_id'))
+    
+    if start_disabled:
+        if st.session_state.get('vector_store_id') and not st.session_state.get('assistant_id'):
+            # Create an assistant automatically if vector store exists but no assistant
+            vector_store_id = st.session_state.get('vector_store_id')
+            vs = VectorStore.objects(vector_store_id=vector_store_id).first()
+            
+            if vs:
+                st.info(f"Creating assistant for {vs.name}...")
+                try:
+                    assistant_id = create_assistant("", vector_store_id, current_user)
+                    if assistant_id:
+                        st.session_state.assistant_id = assistant_id
+                        start_disabled = False
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Error creating assistant: {str(e)}")
     
     if st.button('Start Session', disabled=start_disabled):
         try:
@@ -219,7 +278,11 @@ def create_new_chat(current_user):
                 vector_store_id=st.session_state.vector_store_id,
                 user=current_user
             )
-            st.success('Study session started successfully! You can now interact with your assistant from the Previous Sessions section.')
+            # Store success message in session state instead of displaying directly
+            st.session_state.persistent_success_message = 'Study session started successfully! You can now interact with your assistant from the Previous Sessions section.'
+            # Add a flag to redirect to the Previous Sessions page
+            st.session_state.redirect_to_sessions = True
+            st.rerun()
         except Exception as e:
             logging.error(f"Error creating study session: {str(e)}")
             st.error(f'Error creating study session: {str(e)}')
@@ -248,7 +311,28 @@ def select_thread_sidebar(current_user):
 
 def display_thread(selected_thread):
     """Display the selected study session and chat interface."""
+    # Display any persistent success messages from previous actions
+    if st.session_state.get('persistent_success_message'):
+        st.success(st.session_state.get('persistent_success_message'))
+        # Clear after displaying once
+        st.session_state.pop('persistent_success_message')
+        
     st.title(f"Study Session: {selected_thread.title}")
+    
+    # Show information about the materials being used
+    if selected_thread.vector_store:
+        st.info(f"📚 Study Materials: {selected_thread.vector_store.name}")
+        
+        # Get the files associated with this vector store
+        try:
+            files = get_vector_store_files(selected_thread.vector_store.vector_store_id)
+            if files:
+                with st.expander("Files in this study session"):
+                    for file in files:
+                        st.write(f"- {file['name']}")
+        except Exception as e:
+            logging.error(f"Error fetching vector store files: {str(e)}")
+    
     handle_chat_interface(selected_thread)
 
 def handle_chat_interface(selected_thread):

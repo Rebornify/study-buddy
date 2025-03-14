@@ -103,16 +103,29 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
 
 6. To begin studying:
    1. Go to "New Study Session"
-   2. Upload your study materials (PDF or TXT files)
-   3. Click "Upload File(s)" to process them
-   4. Click "Create Assistant" to set up your AI tutor
-   5. Name your study session and click "Start Chatting"
+   2. Upload your study materials (PDF or TXT files) or select from previously uploaded files
+   3. Click "Upload File(s)" to process new materials
+   4. Name your collection of study materials and click "Create Collection"
+      - The system will automatically check if you've already created a collection with the same files and reuse it if found
+      - An assistant will be automatically created for your study materials
+   5. Enter a title for your study session and click "Start Session"
 
 7. In the chat:
    - Ask questions about your materials
    - Your AI tutor will respond based on your uploaded content
+   - You can see which study materials are being used in the current session
 
 8. Return to previous sessions anytime via "Previous Sessions"
+
+## Resource Management
+
+Study Buddy efficiently manages resources to avoid unnecessary API calls:
+
+- **Files**: Once uploaded, files are stored and can be reused across multiple collections
+- **Collections**: A collection (vector store) with identical files will be reused instead of creating duplicates
+- **Assistants**: Each collection is automatically paired with a dedicated assistant, eliminating the need for manual assistant creation
+
+This design optimizes OpenAI API usage while maintaining the flexibility to create specialized study sessions for different materials.
 
 ## Contributing
 

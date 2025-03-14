@@ -23,7 +23,7 @@ class VectorStore(Document):
 
 class Assistant(Document):
     assistant_id = StringField(required=True, unique=True)
-    name = StringField(required=True)
+    name = StringField(required=False)
     vector_store = ReferenceField(VectorStore, required=True)
     user = ReferenceField(User, required=True, reverse_delete_rule=CASCADE)
     created_at = DateTimeField(default=datetime.now)

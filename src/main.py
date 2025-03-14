@@ -39,12 +39,18 @@ def main():
         # Logout button in sidebar
         if st.sidebar.button("Logout"):
             st.logout()
-            
-        # Navigation in sidebar
-        app_page = st.sidebar.radio(
-            "Navigation Menu",
-            ["Home", "New Study Session", "Previous Sessions"]
-        )
+        
+        # Check for redirect flags
+        if st.session_state.get('redirect_to_sessions', False):
+            app_page = "Previous Sessions"
+            # Clear the flag after using it
+            st.session_state.pop('redirect_to_sessions')
+        else:
+            # Navigation in sidebar
+            app_page = st.sidebar.radio(
+                "Navigation Menu",
+                ["Home", "New Study Session", "Previous Sessions"]
+            )
 
         if app_page == "Home":
             display_home(current_user)
