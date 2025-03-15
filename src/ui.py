@@ -21,6 +21,10 @@ from utils import (
 from openai.types.beta.assistant_stream_event import ThreadMessageDelta
 from openai.types.beta.threads.text_delta_block import TextDeltaBlock
 
+def ensure_navigation_state(page):
+    """Helper function to set the current navigation page in session state."""
+    st.session_state.current_page = page
+
 def display_home(current_user):
     """Display the home page."""
     st.title("Welcome to Study Buddy")
@@ -100,6 +104,8 @@ def create_new_chat(current_user):
                     status_text.text('All files processed successfully!')
                     # Store success message in session state instead of displaying directly
                     st.session_state.persistent_success_message = f'{total_files} new file(s) uploaded successfully!'
+                    # Save current navigation state before rerun
+                    ensure_navigation_state("New Study Session")
                     st.rerun()
             except Exception as e:
                 st.error(f'Error uploading files: {str(e)}')
@@ -218,6 +224,8 @@ def create_new_chat(current_user):
                         else:
                             st.error('Failed to set up assistant for your study materials.')
                     
+                    # Save current navigation state before rerun
+                    ensure_navigation_state("New Study Session")
                     st.rerun()
                 else:
                     # Create new vector store and associate files
@@ -233,6 +241,8 @@ def create_new_chat(current_user):
                             st.session_state.persistent_success_message = 'Study materials and assistant created and ready to use!'
                         else:
                             st.error('Failed to set up assistant for your study materials.')
+                        # Save current navigation state before rerun
+                        ensure_navigation_state("New Study Session")
                         st.rerun()
                     else:
                         st.error('Failed to create study materials.')
@@ -266,6 +276,8 @@ def create_new_chat(current_user):
                     if assistant_id:
                         st.session_state.assistant_id = assistant_id
                         start_disabled = False
+                        # Save current navigation state before rerun
+                        ensure_navigation_state("New Study Session")
                         st.rerun()
                 except Exception as e:
                     st.error(f"Error creating assistant: {str(e)}")
@@ -282,6 +294,8 @@ def create_new_chat(current_user):
             st.session_state.persistent_success_message = 'Study session started successfully! You can now interact with your assistant from the Previous Sessions section.'
             # Add a flag to redirect to the Previous Sessions page
             st.session_state.redirect_to_sessions = True
+            # Make sure the navigation selection matches the redirect
+            ensure_navigation_state("Previous Sessions")
             st.rerun()
         except Exception as e:
             logging.error(f"Error creating study session: {str(e)}")
@@ -292,16 +306,31 @@ def select_thread_sidebar(current_user):
     threads = get_threads(current_user)
     if threads:
         st.sidebar.header("Your Study Sessions")
+        # Save current thread_id before selection changes
+        previous_thread_id = st.session_state.get('thread_id')
+        
+        # Get index for currently selected thread if it exists
+        default_index = 0
+        if previous_thread_id in [thread.thread_id for thread in threads]:
+            default_index = [thread.thread_id for thread in threads].index(previous_thread_id)
+        
         selected_thread_id = st.sidebar.selectbox(
             "Choose a session:",
             options=[thread.thread_id for thread in threads],
-            format_func=lambda x: next((thread.title for thread in threads if thread.thread_id == x), "Untitled Session")
+            format_func=lambda x: next((thread.title for thread in threads if thread.thread_id == x), "Untitled Session"),
+            index=default_index
         )
+
+        # If the thread selection changed, update the current page state
+        if selected_thread_id != previous_thread_id:
+            ensure_navigation_state("Previous Sessions")
 
         if st.sidebar.button("Delete Selected Session"):
             if delete_thread(selected_thread_id):
                 st.sidebar.success("Study session deleted successfully.")
                 st.session_state.thread_id = None
+                # Maintain session state for navigation
+                ensure_navigation_state("Previous Sessions") 
             else:
                 st.sidebar.error("Failed to delete the study session.")
 
