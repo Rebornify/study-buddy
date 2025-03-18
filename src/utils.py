@@ -356,3 +356,161 @@ def check_existing_vector_store(selected_file_ids, current_user):
             continue
     
     return False, None
+
+def delete_file(file_id, current_user):
+    """Delete a file and cascade the deletion to associated vector stores and assistants.
+    
+    Args:
+        file_id: The OpenAI file ID to delete
+        current_user: The user requesting the deletion
+        
+    Returns:
+        bool: True if deletion was successful, False otherwise
+    """
+    try:
+        # Find the file in the database
+        file = File.objects(file_id=file_id, user=current_user).first()
+        if not file:
+            logging.error(f"File with ID {file_id} not found for user {current_user.username}")
+            return False
+            
+        # Find vector stores containing this file
+        vector_stores_to_check = VectorStore.objects(user=current_user)
+        affected_vector_stores = []
+        
+        for vs in vector_stores_to_check:
+            try:
+                vs_files = client.beta.vector_stores.files.list(vector_store_id=vs.vector_store_id)
+                vs_file_ids = [file.id for file in vs_files.data]
+                
+                if file_id in vs_file_ids:
+                    affected_vector_stores.append(vs)
+            except Exception as e:
+                logging.error(f"Error checking files in vector store {vs.vector_store_id}: {str(e)}")
+                continue
+        
+        # For each affected vector store, decide whether to delete it or remove the file
+        for vs in affected_vector_stores:
+            try:
+                vs_files = client.beta.vector_stores.files.list(vector_store_id=vs.vector_store_id)
+                vs_file_ids = [file.id for file in vs_files.data]
+                
+                # If this is the only file in the vector store, delete the entire vector store
+                if len(vs_file_ids) == 1 and vs_file_ids[0] == file_id:
+                    delete_vector_store(vs.vector_store_id, current_user)
+                else:
+                    # Otherwise, just remove this file from the vector store
+                    client.beta.vector_stores.files.delete(
+                        vector_store_id=vs.vector_store_id,
+                        file_id=file_id
+                    )
+                    logging.info(f"Removed file {file_id} from vector store {vs.vector_store_id}")
+            except Exception as e:
+                logging.error(f"Error managing vector store {vs.vector_store_id} during file deletion: {str(e)}")
+                continue
+        
+        # Delete the file from OpenAI
+        try:
+            response = client.files.delete(file_id)
+            if not response.deleted:
+                logging.error(f"OpenAI API reported file {file_id} was not deleted")
+                return False
+        except Exception as e:
+            logging.error(f"Error deleting file {file_id} from OpenAI: {str(e)}")
+            return False
+            
+        # Delete the file from our database
+        file.delete()
+        logging.info(f"File {file_id} successfully deleted")
+        
+        return True
+    except Exception as e:
+        logging.error(f"Error in delete_file for file {file_id}: {str(e)}")
+        return False
+
+def delete_vector_store(vector_store_id, current_user):
+    """Delete a vector store and cascade the deletion to associated assistants and threads.
+    
+    Args:
+        vector_store_id: The OpenAI vector store ID to delete
+        current_user: The user requesting the deletion
+        
+    Returns:
+        bool: True if deletion was successful, False otherwise
+    """
+    try:
+        # Find the vector store in the database
+        vector_store = VectorStore.objects(vector_store_id=vector_store_id, user=current_user).first()
+        if not vector_store:
+            logging.error(f"Vector store with ID {vector_store_id} not found for user {current_user.username}")
+            return False
+            
+        # Find and delete all associated assistants
+        assistants = Assistant.objects(vector_store=vector_store, user=current_user)
+        for assistant in assistants:
+            delete_assistant(assistant.assistant_id, current_user)
+            
+        # Find and delete all threads associated with this vector store
+        threads = Thread.objects(vector_store=vector_store, user=current_user)
+        for thread in threads:
+            delete_thread(thread.thread_id)
+            
+        # Delete the vector store from OpenAI
+        try:
+            response = client.beta.vector_stores.delete(vector_store_id)
+            if not response.deleted:
+                logging.error(f"OpenAI API reported vector store {vector_store_id} was not deleted")
+                return False
+        except Exception as e:
+            logging.error(f"Error deleting vector store {vector_store_id} from OpenAI: {str(e)}")
+            return False
+            
+        # Delete the vector store from our database
+        vector_store.delete()
+        logging.info(f"Vector store {vector_store_id} successfully deleted")
+        
+        return True
+    except Exception as e:
+        logging.error(f"Error in delete_vector_store for vector store {vector_store_id}: {str(e)}")
+        return False
+
+def delete_assistant(assistant_id, current_user):
+    """Delete an assistant and all associated threads.
+    
+    Args:
+        assistant_id: The OpenAI assistant ID to delete
+        current_user: The user requesting the deletion
+        
+    Returns:
+        bool: True if deletion was successful, False otherwise
+    """
+    try:
+        # Find the assistant in the database
+        assistant = Assistant.objects(assistant_id=assistant_id, user=current_user).first()
+        if not assistant:
+            logging.error(f"Assistant with ID {assistant_id} not found for user {current_user.username}")
+            return False
+            
+        # Find and delete all threads associated with this assistant
+        threads = Thread.objects(assistant_id=assistant_id, user=current_user)
+        for thread in threads:
+            delete_thread(thread.thread_id)
+            
+        # Delete the assistant from OpenAI
+        try:
+            response = client.beta.assistants.delete(assistant_id)
+            if not response.deleted:
+                logging.error(f"OpenAI API reported assistant {assistant_id} was not deleted")
+                return False
+        except Exception as e:
+            logging.error(f"Error deleting assistant {assistant_id} from OpenAI: {str(e)}")
+            return False
+            
+        # Delete the assistant from our database
+        assistant.delete()
+        logging.info(f"Assistant {assistant_id} successfully deleted")
+        
+        return True
+    except Exception as e:
+        logging.error(f"Error in delete_assistant for assistant {assistant_id}: {str(e)}")
+        return False

@@ -16,7 +16,10 @@ from utils import (
     handle_file_upload,
     save_message,
     get_vector_store_files,
-    check_existing_vector_store
+    check_existing_vector_store,
+    delete_file,
+    delete_vector_store,
+    delete_assistant
 )
 from openai.types.beta.assistant_stream_event import ThreadMessageDelta
 from openai.types.beta.threads.text_delta_block import TextDeltaBlock
@@ -34,6 +37,7 @@ def display_home(current_user):
     **What you can do:**
     - **Start a New Study Session:** Upload your study materials and start a conversation with your assistant.
     - **Continue Learning:** Access and continue your previous study sessions.
+    - **Manage Files:** Clean up your files and study collections.
 
     Use the sidebar to navigate between different sections and select your study sessions!
     """)
@@ -444,3 +448,172 @@ def handle_chat_interface(selected_thread):
             except Exception as e:
                 st.error(f"Error during streaming: {str(e)}")
                 logging.error(f"Error during streaming: {str(e)}")
+
+def manage_files(current_user):
+    """Allow users to manage their files, vector stores, and assistants."""
+    st.title("Manage Your Files")
+    
+    # Display any success or error messages
+    if 'manage_success_message' in st.session_state:
+        st.success(st.session_state.manage_success_message)
+        del st.session_state.manage_success_message
+    
+    if 'manage_error_message' in st.session_state:
+        st.error(st.session_state.manage_error_message)
+        del st.session_state.manage_error_message
+    
+    st.write("""
+    Here you can manage your study materials, collections, and assistants.
+    
+    **Warning:** Deleting a file or collection will cascade to delete all dependent resources.
+    - Deleting a file will remove it from all collections using it
+    - Deleting a collection will also delete its assistant and all associated threads
+    - A collection will be automatically deleted if its last file is removed
+    """)
+    
+    # -----------------------------
+    # File Management Section
+    # -----------------------------
+    st.header("Your Files")
+    
+    user_files = get_user_files(current_user)
+    
+    if not user_files:
+        st.info("You haven't uploaded any files yet.")
+    else:
+        # Create a dataframe to display files in a table
+        file_data = []
+        for file in user_files:
+            file_data.append({
+                "Name": file.name,
+                "Upload Date": file.created_at.strftime("%Y-%m-%d %H:%M"),
+                "ID": file.file_id
+            })
+        
+        st.dataframe(file_data, use_container_width=True, hide_index=True)
+        
+        # File deletion section
+        st.subheader("Delete Files")
+        st.warning("Deleting a file will remove it from all collections using it.")
+        
+        file_options = {file.name: file.file_id for file in user_files}
+        selected_file_to_delete = st.selectbox(
+            "Select a file to delete:",
+            options=list(file_options.keys()),
+            key="file_delete_select"
+        )
+        
+        if st.button("Delete Selected File", key="delete_file_button"):
+            file_id = file_options[selected_file_to_delete]
+            # Set a confirmation state for this specific file
+            confirm_key = f"confirm_delete_file_{file_id}"
+            st.session_state[confirm_key] = True
+            st.rerun()
+        
+        # If we're in confirmation mode for this file
+        file_id = file_options.get(selected_file_to_delete)
+        if file_id:
+            confirm_key = f"confirm_delete_file_{file_id}"
+            if st.session_state.get(confirm_key, False):
+                st.warning(f"Are you sure you want to delete file '{selected_file_to_delete}'? This may affect collections using this file.")
+                
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    if st.button("Yes, Delete File", key="confirm_file_yes", type="primary"):
+                        success = delete_file(file_id, current_user)
+                        if success:
+                            # Clear the confirmation state
+                            st.session_state.pop(confirm_key, None)
+                            st.session_state.manage_success_message = f"File '{selected_file_to_delete}' deleted successfully."
+                            st.rerun()
+                        else:
+                            # Clear the confirmation state
+                            st.session_state.pop(confirm_key, None)
+                            st.session_state.manage_error_message = f"Failed to delete file '{selected_file_to_delete}'."
+                            st.rerun()
+                with col2:
+                    if st.button("Cancel", key="confirm_file_no"):
+                        # Clear the confirmation state
+                        st.session_state.pop(confirm_key, None)
+                        st.rerun()
+    
+    # -----------------------------
+    # Vector Store Management Section
+    # -----------------------------
+    st.header("Your Collections")
+    
+    vector_stores = get_user_vector_stores(current_user)
+    
+    if not vector_stores:
+        st.info("You haven't created any collections yet.")
+    else:
+        # Create a dataframe to display vector stores in a table
+        vs_data = []
+        for vs in vector_stores:
+            vs_data.append({
+                "Name": vs.name,
+                "Created": vs.created_at.strftime("%Y-%m-%d %H:%M"),
+                "Last Updated": vs.updated_at.strftime("%Y-%m-%d %H:%M"),
+                "ID": vs.vector_store_id
+            })
+        
+        st.dataframe(vs_data, use_container_width=True, hide_index=True)
+        
+        # Collection details and deletion section
+        st.subheader("Collection Details & Deletion")
+        st.warning("Deleting a collection will also delete its assistant and all chat threads.")
+        
+        vs_options = {vs.name: vs.vector_store_id for vs in vector_stores}
+        selected_vs = st.selectbox(
+            "Select a collection:",
+            options=list(vs_options.keys()),
+            key="vs_select"
+        )
+        
+        if selected_vs:
+            vs_id = vs_options[selected_vs]
+            
+            # Display files in the selected vector store
+            try:
+                vs_files = get_vector_store_files(vs_id)
+                
+                if vs_files:
+                    st.write("Files in this collection:")
+                    for file in vs_files:
+                        st.write(f"- {file['name']}")
+                else:
+                    st.info("This collection has no files.")
+            except Exception as e:
+                st.error(f"Error loading collection details: {str(e)}")
+            
+            # Delete the vector store
+            if st.button("Delete This Collection", key="delete_vs_button"):
+                # Set a confirmation state for this specific collection
+                confirm_key = f"confirm_delete_{vs_id}"
+                st.session_state[confirm_key] = True
+                st.rerun()
+            
+            # If we're in confirmation mode for this collection
+            confirm_key = f"confirm_delete_{vs_id}"
+            if st.session_state.get(confirm_key, False):
+                st.warning(f"Are you sure you want to delete collection '{selected_vs}'? This will also delete its assistant and all chat threads.")
+                
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    if st.button("Yes, Delete Collection", key="confirm_yes", type="primary"):
+                        success = delete_vector_store(vs_id, current_user)
+                        if success:
+                            # Clear the confirmation state
+                            st.session_state.pop(confirm_key, None)
+                            st.session_state.manage_success_message = f"Collection '{selected_vs}' deleted successfully."
+                            st.rerun()
+                        else:
+                            # Clear the confirmation state
+                            st.session_state.pop(confirm_key, None)
+                            st.session_state.manage_error_message = f"Failed to delete collection '{selected_vs}'."
+                            st.rerun()
+                with col2:
+                    if st.button("Cancel", key="confirm_no"):
+                        # Clear the confirmation state
+                        st.session_state.pop(confirm_key, None)
+                        st.rerun()

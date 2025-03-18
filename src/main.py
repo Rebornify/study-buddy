@@ -1,6 +1,6 @@
 import streamlit as st
 
-from ui import create_new_chat, display_home, display_thread, select_thread_sidebar, ensure_navigation_state
+from ui import create_new_chat, display_home, display_thread, select_thread_sidebar, ensure_navigation_state, manage_files
 from utils import get_or_create_user_from_google
 
 def main():
@@ -54,8 +54,9 @@ def main():
         # Navigation in sidebar with session state to remember selection
         app_page = st.sidebar.radio(
             "Navigation Menu",
-            ["Home", "New Study Session", "Previous Sessions"],
-            index=["Home", "New Study Session", "Previous Sessions"].index(st.session_state.current_page)
+            ["Home", "New Study Session", "Previous Sessions", "Manage Files"],
+            index=["Home", "New Study Session", "Previous Sessions", "Manage Files"].index(st.session_state.current_page) 
+            if st.session_state.current_page in ["Home", "New Study Session", "Previous Sessions", "Manage Files"] else 0
         )
         
         # Only update navigation state if it has changed
@@ -74,6 +75,8 @@ def main():
                 display_thread(selected_thread)
             else:
                 st.info("No previous study sessions found. Start by creating a new study session!")
+        elif st.session_state.current_page == "Manage Files":
+            manage_files(current_user)
 
 if __name__ == "__main__":
     main()
