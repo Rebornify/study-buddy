@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -35,12 +36,32 @@ else:
     ENVIRONMENT = "production"
     logging.debug("Assuming production environment.")
 
-def get_env_variable(var_name):
-    """Retrieve environment variables based on the environment."""
+def get_env_variable(var_name: str) -> Optional[str]:
+    """
+    Retrieve environment variables based on the environment.
+    
+    Args:
+        var_name: Name of the environment variable to retrieve
+        
+    Returns:
+        The value of the environment variable or None if not found
+    """
     return st.secrets.get(var_name) if ENVIRONMENT == "production" else os.getenv(var_name)
 
-def get_and_validate_env(var_name, display_name):
-    """Retrieve and validate an environment variable."""
+def get_and_validate_env(var_name: str, display_name: str) -> Optional[str]:
+    """
+    Retrieve and validate an environment variable.
+    
+    This function gets an environment variable and logs an error if it's not found.
+    It also displays an error message to the user in the Streamlit interface.
+    
+    Args:
+        var_name: Name of the environment variable to retrieve
+        display_name: Human-readable name for the variable (used in error messages)
+        
+    Returns:
+        The value of the environment variable or None if not found
+    """
     value = get_env_variable(var_name)
     if not value:
         logging.error(f"{display_name} not found.")

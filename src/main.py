@@ -1,10 +1,21 @@
 import streamlit as st
+from typing import NoReturn
 
 from ui import create_new_chat, display_home, display_thread, select_thread_sidebar, ensure_navigation_state, manage_files
 from utils import get_or_create_user_from_google
+from models import User
 
-def main():
-    """Main function to run the Streamlit app."""
+def main() -> NoReturn:
+    """
+    Main function to run the Streamlit application.
+    
+    This function initializes the application, handles user authentication,
+    manages navigation between different pages, and displays the appropriate
+    UI components based on the current page.
+    
+    Returns:
+        NoReturn: This function runs continuously as a Streamlit app
+    """
     # Initialize session state for navigation if not exists
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "Home"
@@ -35,7 +46,7 @@ def main():
         user_name = st.experimental_user.name
         
         # Get or create user in database
-        current_user = get_or_create_user_from_google(user_email, user_name)
+        current_user: User = get_or_create_user_from_google(user_email, user_name)
         
         # Sidebar for navigation after successful login
         st.sidebar.title(f"Welcome, {user_name}!")

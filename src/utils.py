@@ -1,9 +1,10 @@
 import logging
 from datetime import datetime, timezone
 from io import BytesIO
-from typing import Optional
+from typing import Optional, List, Union, Dict, Any, Tuple
 
 import streamlit as st
+import openai
 
 from config import MODEL, client
 from models import Message, Thread, User, File, VectorStore, Assistant
@@ -24,8 +25,23 @@ class NamedBytesIO(BytesIO):
 # Helper Functions
 # ----------------------------
 
-def handle_file_upload(uploaded_files, current_user):
-    """Handle the file upload process for the current user."""
+def handle_file_upload(uploaded_files: List[st.runtime.uploaded_file_manager.UploadedFile], current_user: User) -> None:
+    """
+    Handle the file upload process for the current user.
+    
+    This function processes files uploaded through the Streamlit interface,
+    uploads them to OpenAI, and saves their metadata in the database.
+    
+    Args:
+        uploaded_files: List of files uploaded through Streamlit's file uploader
+        current_user: Current authenticated user object
+        
+    Returns:
+        None
+        
+    Displays:
+        Warning or success messages to the user in the Streamlit interface
+    """
     if not uploaded_files:
         st.warning('Please select a file to upload.')
         return
@@ -57,7 +73,19 @@ def handle_file_upload(uploaded_files, current_user):
     st.info("Files are being processed and will be available shortly.")
 
 def upload_to_openai(named_upload_buffer: NamedBytesIO, filename: str) -> str:
-    """Upload a file to OpenAI and return the file ID."""
+    """
+    Upload a file to OpenAI and return the file ID.
+    
+    Args:
+        named_upload_buffer: BytesIO subclass containing the file data with a name attribute
+        filename: Name of the file being uploaded
+        
+    Returns:
+        str: The OpenAI file ID of the uploaded file
+        
+    Raises:
+        Exception: If the file upload fails
+    """
     try:
         response = client.files.create(file=named_upload_buffer, purpose='assistants')
         logging.debug(f"File '{filename}' uploaded to OpenAI with ID: {response.id}")
@@ -67,12 +95,36 @@ def upload_to_openai(named_upload_buffer: NamedBytesIO, filename: str) -> str:
         st.sidebar.error(f"Failed to upload file {filename}: {str(e)}")
         raise e
 
-def get_user_files(user):
-    """Retrieve all files uploaded by the user."""
+def get_user_files(user: User) -> List[File]:
+    """
+    Retrieve all files uploaded by the user.
+    
+    Args:
+        user: User object whose files should be retrieved
+        
+    Returns:
+        List of File objects belonging to the user
+    """
     return File.objects(user=user)
 
-def create_vector_store(name, selected_file_ids, current_user):
-    """Create a new vector store and associate selected files, or reuse existing one."""
+def create_vector_store(name: str, selected_file_ids: List[str], current_user: User) -> str:
+    """
+    Create a new vector store and associate selected files, or reuse existing one.
+    
+    This function checks if a vector store with the exact same set of files already exists,
+    and reuses it if found. Otherwise, it creates a new vector store.
+    
+    Args:
+        name: Name for the new vector store
+        selected_file_ids: List of OpenAI file IDs to include in the vector store
+        current_user: User creating the vector store
+        
+    Returns:
+        str: The ID of the created or reused vector store
+        
+    Raises:
+        Exception: If vector store creation fails
+    """
     try:
         # Check for existing vector stores with same files
         existing_vector_stores = VectorStore.objects(user=current_user)
@@ -207,28 +259,60 @@ def get_user_assistants(user):
     """Retrieve all assistants created by the user."""
     return Assistant.objects(user=user)
 
-def create_thread(title='New thread', assistant_id=None, vector_store_id=None, user=None):
-    """Create a new thread associated with a user."""
-    if user is None:
-        raise ValueError("User must be provided to create a thread.")
-
-    # Fetch the VectorStore object
-    vector_store = VectorStore.objects(vector_store_id=vector_store_id).first()
-
-    # Create a new thread via OpenAI API
-    new_thread_id = client.beta.threads.create().id
-    new_thread = Thread(
-        thread_id=new_thread_id,
-        vector_store=vector_store,
-        assistant_id=assistant_id,
-        title=title,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-        user=user
-    )
-    new_thread.save()
-    logging.debug(f"Thread '{title}' created with ID: {new_thread.thread_id} for user: {user.username}")
-    return new_thread
+def create_thread(title: str = 'New thread', assistant_id: Optional[str] = None, 
+                 vector_store_id: Optional[str] = None, user: Optional[User] = None) -> Optional[Thread]:
+    """
+    Create a new conversation thread.
+    
+    This function creates a new thread in OpenAI and stores it in the database.
+    It associates the thread with an assistant, vector store, and user.
+    
+    Args:
+        title: Title of the new thread (default: 'New thread')
+        assistant_id: ID of the assistant to associate with the thread (optional)
+        vector_store_id: ID of the vector store to associate with the thread (optional)
+        user: User who owns the thread (optional)
+        
+    Returns:
+        Thread: The newly created thread object or None if creation fails
+        
+    Raises:
+        Exception: If thread creation fails
+    """
+    try:
+        # Create the thread in OpenAI
+        thread_response = client.beta.threads.create()
+        
+        # Create and save the thread in the database
+        thread = Thread(
+            thread_id=thread_response.id,
+            vector_store=VectorStore.objects(vector_store_id=vector_store_id).first() if vector_store_id else None,
+            assistant_id=assistant_id or "",
+            title=title,
+            user=user,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        thread.save()
+        
+        logging.debug(f"Thread created with ID: {thread.thread_id}")
+        return thread
+    except openai.APIError as e:
+        logging.error(f"OpenAI API returned an API Error creating thread: {e}")
+        st.error(f"Error creating study session: {str(e)}")
+        return None
+    except openai.APIConnectionError as e:
+        logging.error(f"Failed to connect to OpenAI API when creating thread: {e}")
+        st.error(f"Connection error. Please check your internet connection and try again.")
+        return None
+    except openai.RateLimitError as e:
+        logging.error(f"OpenAI API request exceeded rate limit when creating thread: {e}")
+        st.error(f"Too many requests. Please wait a moment and try again.")
+        return None
+    except Exception as e:
+        logging.error(f"Error creating thread: {str(e)}")
+        st.error(f"Error creating study session: {str(e)}")
+        return None
 
 def delete_thread(thread_id):
     """Delete a thread and its associated messages from the database and OpenAI."""
@@ -264,25 +348,67 @@ def get_threads(user):
     """Retrieve all threads for a specific user."""
     return Thread.objects(user=user).order_by('-updated_at')
 
-def save_message(thread_id, role, content):
-    """Save a message to the database."""
-    current_thread = Thread.objects(thread_id=thread_id).first()
-    if not current_thread:
-        raise ValueError(f'No thread found for thread_id: {thread_id}')
-    Message(
-        thread=current_thread,
-        role=role,
-        content=content,
-        created_at=datetime.now(timezone.utc)
-    ).save()
-    current_thread.update(updated_at=datetime.now(timezone.utc))  # Use update for efficiency
+def save_message(thread_id: str, role: str, content: str) -> Optional[Message]:
+    """
+    Save a new message to a conversation thread.
+    
+    This function creates a new Message object and saves it to the database,
+    associating it with the specified thread.
+    
+    Args:
+        thread_id: ID of the thread the message belongs to
+        role: Role of the message sender (e.g., 'user', 'assistant')
+        content: Text content of the message
+        
+    Returns:
+        Message: The newly created message object or None if creation fails
+    """
+    try:
+        thread = Thread.objects(thread_id=thread_id).first()
+        if not thread:
+            logging.error(f"Thread with ID {thread_id} not found")
+            return None
+        
+        message = Message(
+            thread=thread,
+            role=role,
+            content=content,
+            created_at=datetime.now(timezone.utc)
+        )
+        message.save()
+        
+        # Update the thread's last updated timestamp
+        thread.updated_at = datetime.now(timezone.utc)
+        thread.save()
+        
+        logging.debug(f"Message saved to thread {thread_id}")
+        return message
+    except Exception as e:
+        logging.error(f"Error saving message: {str(e)}")
+        return None
 
-def get_messages(thread_id):
-    """Retrieve messages for a thread."""
-    current_thread = Thread.objects(thread_id=thread_id).first()
-    if current_thread:
-        return Message.objects(thread=current_thread).order_by('created_at')
-    return []
+def get_messages(thread_id: str) -> List[Message]:
+    """
+    Retrieve all messages from a specific thread.
+    
+    Args:
+        thread_id: ID of the thread to get messages from
+        
+    Returns:
+        List[Message]: List of message objects belonging to the thread,
+                       sorted by creation time
+    """
+    try:
+        thread = Thread.objects(thread_id=thread_id).first()
+        if not thread:
+            logging.warning(f"Thread with ID {thread_id} not found when retrieving messages")
+            return []
+        
+        messages = Message.objects(thread=thread).order_by('+created_at')
+        return messages
+    except Exception as e:
+        logging.error(f"Error retrieving messages for thread {thread_id}: {str(e)}")
+        return []
 
 def save_user(username, name, email):
     """Save the newly registered user to MongoDB."""
@@ -301,25 +427,47 @@ def get_current_user(username):
     """Fetch the current user from the database based on username."""
     return User.objects(username=username).first()
 
-def get_or_create_user_from_google(email, name):
-    """Get or create a user from Google authentication data."""
-    # Create a username from the email (remove @ and domain)
-    username = email.split('@')[0]
+def get_or_create_user_from_google(email: str, name: str) -> User:
+    """
+    Get an existing user by email or create a new one from Google authentication data.
     
-    # Check if user exists
-    user = User.objects(email=email).first()
+    This function checks if a user with the given email exists in the database.
+    If found, it returns that user. If not, it creates a new user with the provided
+    Google authentication information.
     
-    if not user:
-        # Create new user if not exists
-        user = User(
-            username=username,
-            name=name,
-            email=email
-        )
-        user.save()
-        logging.debug(f"New Google user {username} successfully saved to MongoDB.")
-    
-    return user
+    Args:
+        email: User's email address from Google authentication
+        name: User's full name from Google authentication
+        
+    Returns:
+        User: The existing or newly created user object
+    """
+    try:
+        # Check if user exists already
+        existing_user = User.objects(email=email).first()
+        
+        if existing_user:
+            logging.debug(f"Found existing user with email: {email}")
+            return existing_user
+        
+        # Create new user - generate a username from email
+        username = email.split('@')[0]
+        
+        # Make sure username is unique (append numbers if needed)
+        base_username = username
+        counter = 1
+        while User.objects(username=username).first():
+            username = f"{base_username}{counter}"
+            counter += 1
+        
+        # Create and save the new user
+        new_user = save_user(username, name, email)
+        logging.debug(f"Created new user with email: {email}")
+        return new_user
+    except Exception as e:
+        logging.error(f"Error in get_or_create_user_from_google: {str(e)}")
+        # In this case, we need to raise the exception as the app cannot proceed without a user
+        raise Exception(f"Error retrieving or creating user: {str(e)}")
 
 def initialize_session_state():
     """Initialize the session state with default values."""

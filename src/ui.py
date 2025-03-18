@@ -1,9 +1,13 @@
 import logging
+from typing import Optional, List, Dict, Any, Tuple, Union
+from datetime import datetime, timezone, timedelta
+import time
 
 import streamlit as st
+import openai
 
 from config import client
-from models import Thread, File, VectorStore, Assistant
+from models import Thread, File, VectorStore, Assistant, User
 from utils import (
     create_vector_store,
     create_assistant,
@@ -18,18 +22,36 @@ from utils import (
     get_vector_store_files,
     check_existing_vector_store,
     delete_file,
-    delete_vector_store,
-    delete_assistant
+    delete_vector_store
 )
 from openai.types.beta.assistant_stream_event import ThreadMessageDelta
 from openai.types.beta.threads.text_delta_block import TextDeltaBlock
 
-def ensure_navigation_state(page):
-    """Helper function to set the current navigation page in session state."""
+def ensure_navigation_state(page: str) -> None:
+    """
+    Helper function to set the current navigation page in session state.
+    
+    Args:
+        page: The name of the page to navigate to
+        
+    Returns:
+        None
+    """
     st.session_state.current_page = page
 
-def display_home(current_user):
-    """Display the home page."""
+def display_home(current_user: User) -> None:
+    """
+    Display the home page of the application.
+    
+    This function renders the welcome message and information about the application
+    features on the home page.
+    
+    Args:
+        current_user: The currently authenticated user
+        
+    Returns:
+        None
+    """
     st.title("Welcome to Study Buddy")
     st.write("""
     **Study Buddy** is your personal AI assistant to help you learn and understand various concepts.
@@ -42,8 +64,19 @@ def display_home(current_user):
     Use the sidebar to navigate between different sections and select your study sessions!
     """)
 
-def create_new_chat(current_user):
-    """Create a new chat session."""
+def create_new_chat(current_user: User) -> None:
+    """
+    Create a new chat session with the AI assistant.
+    
+    This function handles the UI for creating a new study session, including
+    file upload, vector store and assistant creation, and thread initialization.
+    
+    Args:
+        current_user: The currently authenticated user
+        
+    Returns:
+        None
+    """
     st.title("Start a New Study Session")
     
     # Display any persistent success messages from previous actions
@@ -305,8 +338,19 @@ def create_new_chat(current_user):
             logging.error(f"Error creating study session: {str(e)}")
             st.error(f'Error creating study session: {str(e)}')
 
-def select_thread_sidebar(current_user):
-    """Display study session selection in the sidebar."""
+def select_thread_sidebar(current_user: User) -> Optional[Thread]:
+    """
+    Display study session selection in the sidebar.
+    
+    This function shows a dropdown of the user's previous threads in the sidebar
+    and allows the user to select one to view or delete.
+    
+    Args:
+        current_user: The currently authenticated user
+        
+    Returns:
+        Thread: The selected thread object or None if no threads exist
+    """
     threads = get_threads(current_user)
     if threads:
         st.sidebar.header("Your Study Sessions")
@@ -324,11 +368,11 @@ def select_thread_sidebar(current_user):
             format_func=lambda x: next((thread.title for thread in threads if thread.thread_id == x), "Untitled Session"),
             index=default_index
         )
-
+        
         # If the thread selection changed, update the current page state
         if selected_thread_id != previous_thread_id:
             ensure_navigation_state("Previous Sessions")
-
+        
         if st.sidebar.button("Delete Selected Session"):
             if delete_thread(selected_thread_id):
                 st.sidebar.success("Study session deleted successfully.")
@@ -342,34 +386,45 @@ def select_thread_sidebar(current_user):
         return Thread.objects(thread_id=selected_thread_id).first()
     return None
 
-def display_thread(selected_thread):
-    """Display the selected study session and chat interface."""
-    # Display any persistent success messages from previous actions
-    if st.session_state.get('persistent_success_message'):
-        st.success(st.session_state.get('persistent_success_message'))
-        # Clear after displaying once
-        st.session_state.pop('persistent_success_message')
-        
-    st.title(f"Study Session: {selected_thread.title}")
+def display_thread(selected_thread: Thread) -> None:
+    """
+    Display a selected conversation thread and the chat interface.
     
-    # Show information about the materials being used
-    if selected_thread.vector_store:
-        st.info(f"📚 Study Materials: {selected_thread.vector_store.name}")
-        
-        # Get the files associated with this vector store
-        try:
-            files = get_vector_store_files(selected_thread.vector_store.vector_store_id)
-            if files:
-                with st.expander("Files in this study session"):
-                    for file in files:
-                        st.write(f"- {file['name']}")
-        except Exception as e:
-            logging.error(f"Error fetching vector store files: {str(e)}")
+    This function shows the title of the selected thread and renders
+    the chat interface for the conversation.
     
+    Args:
+        selected_thread: The Thread object to display
+        
+    Returns:
+        None
+    """
+    # Display the thread title and delete button in the main area
+    col1, col2 = st.columns([5, 1])
+    with col1:
+        st.title(selected_thread.title)
+    with col2:
+        if st.button("Delete Thread", type="primary", use_container_width=True):
+            if delete_thread(selected_thread.thread_id):
+                st.session_state.current_page = "Previous Sessions"
+                st.rerun()
+    
+    # Render the chat interface
     handle_chat_interface(selected_thread)
 
-def handle_chat_interface(selected_thread):
-    """Handle the chat interface for the selected study session."""
+def handle_chat_interface(selected_thread: Thread) -> None:
+    """
+    Handle the chat interface for the selected study session.
+    
+    This function manages the chat UI, handling message display,
+    user input, OpenAI communication, and response streaming.
+    
+    Args:
+        selected_thread: The Thread object for the current conversation
+        
+    Returns:
+        None
+    """
     if not selected_thread:
         st.info('No study session selected. Start a new session from the New Study Session tab.')
         return
@@ -399,6 +454,17 @@ def handle_chat_interface(selected_thread):
                 role='user',
                 content=prompt
             )
+        except (openai.APIError, openai.APIConnectionError, openai.RateLimitError) as e:
+            if isinstance(e, openai.APIError):
+                st.error(f"OpenAI API returned an error: {str(e)}")
+                logging.error(f"OpenAI API Error: {str(e)}")
+            elif isinstance(e, openai.APIConnectionError):
+                st.error("Connection error. Please check your internet connection and try again.")
+                logging.error(f"OpenAI API Connection Error: {str(e)}")
+            elif isinstance(e, openai.RateLimitError):
+                st.error("Too many requests. Please wait a moment and try again.")
+                logging.error(f"OpenAI Rate Limit Error: {str(e)}")
+            return
         except Exception as e:
             st.error(f"Failed to send message to OpenAI: {str(e)}")
             logging.error(f"Failed to send message to OpenAI: {str(e)}")
@@ -445,12 +511,33 @@ def handle_chat_interface(selected_thread):
                 # Save the final message with annotations
                 save_message(st.session_state.thread_id, 'assistant', assistant_response)
                 
+            except (openai.APIError, openai.APIConnectionError, openai.RateLimitError) as e:
+                if isinstance(e, openai.APIError):
+                    st.error(f"OpenAI API returned an error: {str(e)}")
+                    logging.error(f"OpenAI API Error during streaming: {str(e)}")
+                elif isinstance(e, openai.APIConnectionError):
+                    st.error("Connection error. Please check your internet connection and try again.")
+                    logging.error(f"OpenAI API Connection Error during streaming: {str(e)}")
+                elif isinstance(e, openai.RateLimitError):
+                    st.error("Too many requests. Please wait a moment and try again.")
+                    logging.error(f"OpenAI Rate Limit Error during streaming: {str(e)}")
             except Exception as e:
                 st.error(f"Error during streaming: {str(e)}")
                 logging.error(f"Error during streaming: {str(e)}")
 
-def manage_files(current_user):
-    """Allow users to manage their files, vector stores, and assistants."""
+def manage_files(current_user: User) -> None:
+    """
+    Allow users to manage their files, vector stores, and assistants.
+    
+    This function provides a UI for managing study materials, including
+    file deletion, vector store management, and assistant settings.
+    
+    Args:
+        current_user: The currently authenticated user
+        
+    Returns:
+        None
+    """
     st.title("Manage Your Files")
     
     # Display any success or error messages
