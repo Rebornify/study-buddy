@@ -131,7 +131,7 @@ def create_vector_store(name: str, selected_file_ids: List[str], current_user: U
         
         for vs in existing_vector_stores:
             try:
-                vs_files = client.beta.vector_stores.files.list(vector_store_id=vs.vector_store_id)
+                vs_files = client.vector_stores.files.list(vector_store_id=vs.vector_store_id)
                 vs_file_ids = [file.id for file in vs_files.data]
                 
                 # Check if existing vector store has the exact same files
@@ -144,7 +144,7 @@ def create_vector_store(name: str, selected_file_ids: List[str], current_user: U
                 continue
                 
         # No matching vector store found, create a new one
-        vector_store = client.beta.vector_stores.create(name=name)
+        vector_store = client.vector_stores.create(name=name)
         vector_store_id = vector_store.id
 
         # Save the vector store in the database
@@ -170,7 +170,7 @@ def create_vector_store_files(vector_store_id, file_ids):
     """Attach files to a vector store."""
     for file_id in file_ids:
         try:
-            client.beta.vector_stores.files.create(
+            client.vector_stores.files.create(
                 vector_store_id=vector_store_id,
                 file_id=file_id
             )
@@ -182,7 +182,7 @@ def create_vector_store_files(vector_store_id, file_ids):
 def get_vector_store_files(vector_store_id):
     """Retrieve the list of uploaded files for a vector store."""
     try:
-        files_list = client.beta.vector_stores.files.list(vector_store_id=vector_store_id)
+        files_list = client.vector_stores.files.list(vector_store_id=vector_store_id)
         file_details = [
             {'name': client.files.retrieve(file.id).filename, 'id': file.id}
             for file in files_list.data
@@ -492,7 +492,7 @@ def check_existing_vector_store(selected_file_ids, current_user):
     
     for vs in existing_vector_stores:
         try:
-            vs_files = client.beta.vector_stores.files.list(vector_store_id=vs.vector_store_id)
+            vs_files = client.vector_stores.files.list(vector_store_id=vs.vector_store_id)
             vs_file_ids = [file.id for file in vs_files.data]
             
             # Check if existing vector store has the exact same files
@@ -528,7 +528,7 @@ def delete_file(file_id, current_user):
         
         for vs in vector_stores_to_check:
             try:
-                vs_files = client.beta.vector_stores.files.list(vector_store_id=vs.vector_store_id)
+                vs_files = client.vector_stores.files.list(vector_store_id=vs.vector_store_id)
                 vs_file_ids = [file.id for file in vs_files.data]
                 
                 if file_id in vs_file_ids:
@@ -540,7 +540,7 @@ def delete_file(file_id, current_user):
         # For each affected vector store, decide whether to delete it or remove the file
         for vs in affected_vector_stores:
             try:
-                vs_files = client.beta.vector_stores.files.list(vector_store_id=vs.vector_store_id)
+                vs_files = client.vector_stores.files.list(vector_store_id=vs.vector_store_id)
                 vs_file_ids = [file.id for file in vs_files.data]
                 
                 # If this is the only file in the vector store, delete the entire vector store
@@ -548,7 +548,7 @@ def delete_file(file_id, current_user):
                     delete_vector_store(vs.vector_store_id, current_user)
                 else:
                     # Otherwise, just remove this file from the vector store
-                    client.beta.vector_stores.files.delete(
+                    client.vector_stores.files.delete(
                         vector_store_id=vs.vector_store_id,
                         file_id=file_id
                     )
@@ -605,7 +605,7 @@ def delete_vector_store(vector_store_id, current_user):
             
         # Delete the vector store from OpenAI
         try:
-            response = client.beta.vector_stores.delete(vector_store_id)
+            response = client.vector_stores.delete(vector_store_id)
             if not response.deleted:
                 logging.error(f"OpenAI API reported vector store {vector_store_id} was not deleted")
                 return False
