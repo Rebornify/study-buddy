@@ -5,6 +5,14 @@ from ui import create_new_chat, display_home, display_thread, select_thread_side
 from utils import get_or_create_user_from_google
 from models import User
 
+# Set up the Streamlit page configuration
+st.set_page_config(
+    page_title='Study Buddy - Chat and Learn',
+    layout="wide",
+    page_icon=':books:',
+    initial_sidebar_state="expanded"
+)
+
 def main() -> NoReturn:
     """
     Main function to run the Streamlit application.

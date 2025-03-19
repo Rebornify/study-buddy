@@ -12,13 +12,6 @@ from db_setup import initialize_db
 # Configuration and Setup
 # ----------------------------
 
-# Set up the Streamlit page configuration
-st.set_page_config(
-    page_title='Study Buddy - Chat and Learn',
-    layout="wide",
-    page_icon=':books:'
-)
-
 # Configure logging settings
 logging.basicConfig(
     level=logging.DEBUG,
