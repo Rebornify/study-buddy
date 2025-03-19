@@ -343,7 +343,7 @@ def select_thread_sidebar(current_user: User) -> Optional[Thread]:
     Display study session selection in the sidebar.
     
     This function shows a dropdown of the user's previous threads in the sidebar
-    and allows the user to select one to view or delete.
+    for navigation between sessions.
     
     Args:
         current_user: The currently authenticated user
@@ -354,35 +354,29 @@ def select_thread_sidebar(current_user: User) -> Optional[Thread]:
     threads = get_threads(current_user)
     if threads:
         st.sidebar.header("Your Study Sessions")
-        # Save current thread_id before selection changes
-        previous_thread_id = st.session_state.get('thread_id')
         
         # Get index for currently selected thread if it exists
         default_index = 0
-        if previous_thread_id in [thread.thread_id for thread in threads]:
-            default_index = [thread.thread_id for thread in threads].index(previous_thread_id)
+        thread_ids = [thread.thread_id for thread in threads]
+        previous_thread_id = st.session_state.get('thread_id')
+        
+        if previous_thread_id in thread_ids:
+            default_index = thread_ids.index(previous_thread_id)
         
         selected_thread_id = st.sidebar.selectbox(
             "Choose a session:",
-            options=[thread.thread_id for thread in threads],
+            options=thread_ids,
             format_func=lambda x: next((thread.title for thread in threads if thread.thread_id == x), "Untitled Session"),
-            index=default_index
+            index=default_index,
+            key="thread_selector"
         )
         
-        # If the thread selection changed, update the current page state
+        # Update session state and trigger navigation if selection changed
         if selected_thread_id != previous_thread_id:
+            st.session_state.thread_id = selected_thread_id
             ensure_navigation_state("Previous Sessions")
+            st.rerun()
         
-        if st.sidebar.button("Delete Selected Session"):
-            if delete_thread(selected_thread_id):
-                st.sidebar.success("Study session deleted successfully.")
-                st.session_state.thread_id = None
-                # Maintain session state for navigation
-                ensure_navigation_state("Previous Sessions") 
-            else:
-                st.sidebar.error("Failed to delete the study session.")
-
-        st.session_state.thread_id = selected_thread_id
         return Thread.objects(thread_id=selected_thread_id).first()
     return None
 
@@ -405,8 +399,29 @@ def display_thread(selected_thread: Thread) -> None:
         st.title(selected_thread.title)
     with col2:
         if st.button("Delete Thread", type="primary", use_container_width=True):
-            if delete_thread(selected_thread.thread_id):
-                st.session_state.current_page = "Previous Sessions"
+            # Set confirmation state for this specific thread
+            st.session_state[f"confirm_delete_thread_{selected_thread.thread_id}"] = True
+            st.rerun()
+    
+    # Handle delete confirmation
+    if st.session_state.get(f"confirm_delete_thread_{selected_thread.thread_id}", False):
+        st.warning("Are you sure you want to delete this study session? This action cannot be undone.")
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("Yes, Delete", type="primary"):
+                if delete_thread(selected_thread.thread_id):
+                    st.session_state.thread_id = None
+                    st.session_state.pop(f"confirm_delete_thread_{selected_thread.thread_id}", None)
+                    st.success("Study session deleted successfully.")
+                    ensure_navigation_state("Previous Sessions")
+                    st.rerun()
+                else:
+                    st.error("Failed to delete the study session.")
+                    st.session_state.pop(f"confirm_delete_thread_{selected_thread.thread_id}", None)
+                    st.rerun()
+        with col2:
+            if st.button("Cancel"):
+                st.session_state.pop(f"confirm_delete_thread_{selected_thread.thread_id}", None)
                 st.rerun()
     
     # Render the chat interface
