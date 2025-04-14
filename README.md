@@ -1,6 +1,6 @@
 # Study Buddy
 
-Study Buddy is an AI-powered chat application that helps students learn and study effectively using their own study materials. By leveraging OpenAI's Assistants API v2, it provides an interactive learning experience tailored to your uploaded content.
+Study Buddy is an AI-powered chat application designed to help students learn and study effectively using their own materials. It leverages OpenAI's Assistants API v2 to deliver an interactive learning experience tailored to uploaded content.
 
 ## Features
 
@@ -68,7 +68,7 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
      server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
      ```
    - Replace placeholders with your actual values:
-     - `YOUR_RANDOMLY_GENERATED_SECRET`: A strong, random string for cookie encryption
+     - `YOUR_RANDOMLY_GENERATED_SECRET`: Generate a strong, random string for securing session cookies.
      - `YOUR_GOOGLE_CLIENT_ID`: The client ID from Google Cloud Console
      - `YOUR_GOOGLE_CLIENT_SECRET`: The client secret from Google Cloud Console
    
@@ -105,9 +105,9 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
    1. Go to "New Study Session"
    2. Upload your study materials (PDF or TXT files) or select from previously uploaded files
    3. Click "Upload File(s)" to process new materials
-   4. Name your collection of study materials and click "Create Collection"
-      - The system will automatically check if you've already created a collection with the same files and reuse it if found
-      - An assistant will be automatically created for your study materials
+   4. Provide a descriptive name for your collection of study materials (e.g., 'Chapter 5 Notes') and click 'Create Collection'.
+      - The system automatically detects if an identical set of files has been previously uploaded and reuses the existing collection to optimize resource usage.
+      - An AI assistant, specifically configured for this collection of materials, will be automatically created or retrieved.
    5. Enter a title for your study session and click "Start Session"
 
 7. In the chat:
@@ -119,13 +119,13 @@ Study Buddy is an AI-powered chat application that helps students learn and stud
 
 ## Resource Management
 
-Study Buddy efficiently manages resources to avoid unnecessary API calls:
+To optimize performance and minimize costs, Study Buddy efficiently manages OpenAI resources:
 
 - **Files**: Once uploaded, files are stored and can be reused across multiple collections
-- **Collections**: A collection (vector store) with identical files will be reused instead of creating duplicates
-- **Assistants**: Each collection is automatically paired with a dedicated assistant, eliminating the need for manual assistant creation
+- **Collections**: If an identical set of files is uploaded again, the existing vector store (collection) is reused, avoiding redundant processing and storage
+- **Assistants**: Each unique collection of materials is automatically paired with a dedicated AI assistant instance. This ensures the AI's context is specific to the relevant materials and avoids manual configuration
 
-This design optimizes OpenAI API usage while maintaining the flexibility to create specialized study sessions for different materials.
+This resource management strategy optimizes OpenAI API usage and costs while allowing users to easily create distinct study sessions tailored to different sets of materials.
 
 ## Contributing
 
